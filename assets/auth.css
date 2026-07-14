@@ -1,0 +1,417 @@
+
+/* Google Font */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+/* Reset */
+
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
+    font-family:'Inter',sans-serif;
+}
+
+body{
+
+    min-height:100vh;
+
+    display:flex;
+    justify-content:center;
+    align-items:center;
+
+    padding:20px;
+
+    background:linear-gradient(135deg,#4f46e5,#7c3aed);
+
+}
+
+/* Container */
+
+.container{
+
+    width:100%;
+    max-width:430px;
+
+    background:#fff;
+
+    border-radius:20px;
+
+    padding:35px;
+
+    box-shadow:0 20px 60px rgba(0,0,0,.15);
+
+}
+
+/* Header */
+
+.auth-header{
+
+    text-align:center;
+
+    margin-bottom:30px;
+
+}
+
+.auth-header h1{
+
+    color:#111827;
+
+    font-size:32px;
+
+    font-weight:700;
+
+}
+
+.auth-header p{
+
+    margin-top:8px;
+
+    color:#6b7280;
+
+    font-size:15px;
+
+}
+
+/* Form */
+
+.inputBox{
+
+    margin-bottom:30px;
+
+}
+
+.inputBox label{
+
+    display:block;
+
+    margin-bottom:8px;
+
+    font-size:14px;
+
+    font-weight:600;
+
+    color:#374151;
+
+}
+
+.inputBox input{
+
+    width:100%;
+
+    height:48px;
+
+    border:2px solid #e5e7eb;
+
+    border-radius:12px;
+
+    padding:0 15px;
+
+    font-size:15px;
+
+    outline:none;
+
+    transition:.25s;
+
+}
+
+.inputBox input:focus{
+
+    border-color:#4f46e5;
+
+}
+
+/* Password */
+
+.passwordBox{
+
+    position:relative;
+
+}
+
+.passwordBox input{
+
+    padding-right:55px;
+
+}
+
+.togglePassword{
+
+    position:absolute;
+
+    top:50%;
+
+    right:12px;
+
+    transform:translateY(-50%);
+
+    border:none;
+
+    background:none;
+
+    cursor:pointer;
+
+    font-size:18px;
+
+    color:#6b7280;
+
+}
+
+/* Strength */
+
+.strength{
+
+    width:100%;
+
+    height:6px;
+
+    background:#e5e7eb;
+
+    border-radius:100px;
+
+    margin-top:12px;
+
+    overflow:hidden;
+
+}
+
+.bar{
+
+    width:0;
+
+    height:100%;
+
+    border-radius:100px;
+
+    transition:.3s;
+
+}
+
+.strengthText{
+
+    margin-top:8px;
+
+    font-size:13px;
+
+    font-weight:600;
+
+}
+
+/* Errors */
+
+.error{
+
+    display:block;
+
+    margin-top:8px;
+
+    font-size:13px;
+
+    color:#ef4444;
+
+    min-height:18px;
+
+}
+
+/* Success */
+
+.success{
+
+    border-color:#22c55e !important;
+
+}
+
+.invalid{
+
+    border-color:#ef4444 !important;
+
+}
+
+/* Button */
+
+.submitBtn{
+
+    width:100%;
+
+    height:50px;
+
+    border:none;
+
+    border-radius:12px;
+
+    background:#4f46e5;
+
+    color:#fff;
+
+    font-size:16px;
+
+    font-weight:600;
+
+    cursor:pointer;
+
+    transition:.25s;
+
+}
+
+.submitBtn:hover{
+
+    background:#4338ca;
+
+}
+
+.submitBtn:disabled{
+
+    opacity:.7;
+
+    cursor:not-allowed;
+
+}
+
+/* Footer */
+
+.login{
+
+    margin-top:25px;
+
+    text-align:center;
+
+    color:#6b7280;
+
+    font-size:15px;
+
+}
+
+.login a{
+
+    color:#4f46e5;
+
+    text-decoration:none;
+
+    font-weight:600;
+
+}
+
+.login a:hover{
+
+    text-decoration:underline;
+
+}
+
+/* Responsive */
+
+@media (max-width:480px){
+
+.container{
+
+    padding:25px;
+
+}
+
+.auth-header h1{
+
+    font-size:28px;
+
+}
+
+}
+
+/* Authentication Alerts */
+
+.auth-alert{
+
+    display:flex;
+
+    align-items:center;
+
+    gap:14px;
+
+    padding:15px 18px;
+
+    border-radius:14px;
+
+    margin-bottom:22px;
+
+    animation:slideDown .3s ease;
+
+}
+
+
+.error-alert{
+
+    background:#fff1f2;
+
+    border:1px solid #fecdd3;
+
+    color:#be123c;
+
+}
+
+
+.alert-icon{
+
+    font-size:22px;
+
+}
+
+
+.alert-content{
+
+    display:flex;
+
+    flex-direction:column;
+
+    gap:3px;
+
+}
+
+
+.alert-content strong{
+
+    font-size:15px;
+
+    font-weight:700;
+
+}
+
+
+.alert-content span{
+
+    font-size:14px;
+
+}
+
+
+/* Success */
+
+.success-alert{
+
+    background:#ecfdf5;
+
+    border:1px solid #bbf7d0;
+
+    color:#15803d;
+
+}
+
+
+/* Animation */
+
+@keyframes slideDown{
+
+    from{
+
+        opacity:0;
+
+        transform:translateY(-10px);
+
+    }
+
+
+    to{
+
+        opacity:1;
+
+        transform:translateY(0);
+
+    }
+
+}
