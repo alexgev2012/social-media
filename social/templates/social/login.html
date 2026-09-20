@@ -1,0 +1,13 @@
+{% extends 'social/base.html' %}
+{% block title %}Sign in · Social{% endblock %}
+{% block content %}
+<section class="django-card">
+  <h1>Welcome back</h1>
+  <form method="post" class="django-form">
+    {% csrf_token %}{{ form.as_p }}
+    <input type="hidden" name="next" value="{{ next }}">
+    <button class="primary">Sign in</button>
+  </form>
+  <p class="muted">New here? <a href="{% url 'register' %}">Create an account</a></p>
+</section>
+{% endblock %}

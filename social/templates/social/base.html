@@ -1,0 +1,33 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Social{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'app.css' %}">
+  <link rel="stylesheet" href="{% static 'social/django.css' %}">
+</head>
+<body>
+  <nav class="navbar" aria-label="Main navigation">
+    <div class="nav-inner">
+      <a class="logo" href="{% url 'feed' %}">Social</a>
+      {% if user.is_authenticated %}
+        <form class="nav-search" action="{% url 'search' %}" method="get">
+          <input name="q" value="{{ query }}" placeholder="Search people..." aria-label="Search people" maxlength="150">
+        </form>
+        <a class="nav-link" href="{% url 'profile' user.username %}">{{ user.username }}</a>
+        <a class="nav-link" href="{% url 'notifications' %}">Notifications{% if unread_notifications %} ({{ unread_notifications }}){% endif %}</a>
+        <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="nav-button">Log out</button></form>
+      {% else %}
+        <a class="nav-link" href="{% url 'login' %}">Sign in</a>
+        <a class="nav-link" href="{% url 'register' %}">Register</a>
+      {% endif %}
+    </div>
+  </nav>
+  <main class="django-main">
+    {% for message in messages %}<p class="notice" role="status">{{ message }}</p>{% endfor %}
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

@@ -1,0 +1,11 @@
+{% extends 'social/base.html' %}
+{% block content %}
+<section class="django-card">
+  <h1>Search people</h1>
+  {% if query %}<p class="muted">Results for “{{ query }}”</p>{% endif %}
+  {% for person in page_obj %}
+    <p class="django-comment"><a href="{% url 'profile' person.username %}"><strong>{{ person.get_full_name|default:person.username }}</strong> @{{ person.username }}</a></p>
+  {% empty %}<p class="muted">{% if query %}No people found.{% else %}Enter a name in the search box above.{% endif %}</p>{% endfor %}
+  {% include 'social/pagination.html' %}
+</section>
+{% endblock %}

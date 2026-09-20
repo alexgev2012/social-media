@@ -1,0 +1,22 @@
+{% extends 'social/base.html' %}
+{% block title %}Notifications · Social{% endblock %}
+{% block content %}
+<section class="django-card">
+  <h1>Notifications</h1>
+  {% if unread_notifications %}
+  <form method="post" action="{% url 'read_notifications' %}">{% csrf_token %}<button name="action" value="all">Mark all as read</button></form>
+  {% endif %}
+  {% for notification in page_obj %}
+  <article class="django-comment{% if not notification.is_read %} notification-unread{% endif %}">
+    <p><a href="{% url 'profile' notification.actor.username %}">{{ notification.actor.username }}</a> {{ notification.get_kind_display }}.</p>
+    {% if notification.comment_id %}<a href="{% url 'comment_link' notification.comment_id %}">View comment</a>
+    {% elif notification.post_id %}<a href="{% url 'post_detail' notification.post_id %}">View post</a>{% endif %}
+    <p class="muted">{{ notification.created_at|timesince }} ago{% if not notification.is_read %} · Unread{% endif %}</p>
+    {% if not notification.is_read %}
+    <form method="post" action="{% url 'read_notifications' %}">{% csrf_token %}<button name="notification_id" value="{{ notification.pk }}">Mark as read</button></form>
+    {% endif %}
+  </article>
+  {% empty %}<p class="muted">When people like, comment, reply or follow you, it shows up here.</p>{% endfor %}
+  {% include 'social/pagination.html' %}
+</section>
+{% endblock %}

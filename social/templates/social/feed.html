@@ -1,0 +1,17 @@
+{% extends 'social/base.html' %}
+{% block content %}
+<section class="django-card">
+  <h1>Your feed</h1>
+  <form method="post" enctype="multipart/form-data" class="django-form">
+    {% csrf_token %}{{ form.as_p }}<button class="primary">Publish post</button>
+  </form>
+</section>
+<nav class="feed-tabs" aria-label="Feed filter">
+  <a href="{% url 'feed' %}" {% if not following %}aria-current="page"{% endif %}>Everyone</a>
+  <a href="?feed=following" {% if following %}aria-current="page"{% endif %}>Following</a>
+</nav>
+{% for post in page_obj %}{% include 'social/post_card.html' %}{% empty %}
+<p class="django-card muted">No posts yet. Share something to get started.</p>
+{% endfor %}
+{% include 'social/pagination.html' %}
+{% endblock %}

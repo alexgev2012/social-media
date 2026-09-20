@@ -1,0 +1,20 @@
+{% extends 'social/base.html' %}
+{% block title %}{{ person.username }} · Social{% endblock %}
+{% block content %}
+<section class="django-card">
+  {% if person.avatar %}<img class="profile-picture" src="{% url 'image' 'avatar' person.pk %}" alt="{{ person.username }}'s avatar">{% endif %}
+  <h1>{{ person.get_full_name|default:person.username }}</h1>
+  <p class="muted">@{{ person.username }}</p>
+  <p class="post-copy">{{ person.bio|linebreaksbr }}</p>
+  <p>{{ follower_count }} followers · {{ following_count }} following</p>
+  {% if person == user %}
+    <a class="button" href="{% url 'edit_profile' %}">Edit profile</a>
+  {% else %}
+    <form method="post" action="{% url 'follow' person.username %}">
+      {% csrf_token %}<button class="primary" name="action" value="{% if is_following %}unfollow{% else %}follow{% endif %}">{% if is_following %}Unfollow{% else %}Follow{% endif %}</button>
+    </form>
+  {% endif %}
+</section>
+{% for post in page_obj %}{% include 'social/post_card.html' %}{% empty %}<p class="django-card muted">No posts yet.</p>{% endfor %}
+{% include 'social/pagination.html' %}
+{% endblock %}

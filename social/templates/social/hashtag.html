@@ -1,0 +1,7 @@
+{% extends 'social/base.html' %}
+{% block title %}#{{ tag }} · Social{% endblock %}
+{% block content %}
+<section class="django-card"><h1>#{{ tag }}</h1><p class="muted">Add #{{ tag }} to a post to join this topic.</p><a href="{% url 'feed' %}">Write a post</a></section>
+{% for post in page_obj %}{% include 'social/post_card.html' %}{% empty %}<p class="django-card muted">No posts with this hashtag yet.</p>{% endfor %}
+{% include 'social/pagination.html' %}
+{% endblock %}

@@ -1,0 +1,20 @@
+{% load social_tags %}
+<article class="django-card" id="post-{{ post.pk }}">
+  <header class="post-heading">
+    {% if post.author.avatar %}<img class="avatar" src="{% url 'image' 'avatar' post.author_id %}" alt="" loading="lazy">{% endif %}
+    <div>
+      <a href="{% url 'profile' post.author.username %}"><strong>{{ post.author.get_full_name|default:post.author.username }}</strong></a>
+      <a class="post-time" href="{% url 'post_detail' post.pk %}"><time datetime="{{ post.created_at|date:'c' }}">{{ post.created_at|timesince }} ago</time></a>
+    </div>
+  </header>
+  {% if post.content %}<div class="post-copy">{{ post.content|hashtag_links|linebreaksbr }}</div>{% endif %}
+  {% if post.image %}<img class="django-post-image" src="{% url 'image' 'post' post.pk %}" alt="Image shared by {{ post.author.username }}" loading="lazy">{% endif %}
+  <div class="post-controls">
+    <form method="post" action="{% url 'like_post' post.pk %}">
+      {% csrf_token %}
+      <button name="action" value="{% if post.is_liked %}unlike{% else %}like{% endif %}" aria-pressed="{{ post.is_liked|yesno:'true,false' }}">{% if post.is_liked %}Unlike{% else %}Like{% endif %} · {{ post.like_count }}</button>
+    </form>
+    <a href="{% url 'post_detail' post.pk %}">Comments · {{ post.comment_count }}</a>
+    {% if post.author_id == user.pk %}<a href="{% url 'edit_post' post.pk %}">Edit</a>{% endif %}
+  </div>
+</article>

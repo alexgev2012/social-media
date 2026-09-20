@@ -1,0 +1,39 @@
+{% extends 'social/base.html' %}
+{% block content %}
+{% include 'social/post_card.html' %}
+<section class="django-card">
+  <h2>Comments</h2>
+  {% for comment in page_obj %}
+    <article class="django-comment{% if comment.parent_id %} comment-reply{% endif %}" id="comment-{{ comment.pk }}">
+      {% if comment.parent_id %}<p class="muted">Reply in <a href="{% url 'comment_link' comment.parent_id %}">{{ comment.parent.author.username }}'s thread</a></p>{% endif %}
+      <a href="{% url 'profile' comment.author.username %}"><strong>{{ comment.author.username }}</strong></a>
+      <p>{{ comment.content|linebreaksbr }}</p>
+      <small class="muted">{{ comment.created_at|timesince }} ago</small>
+      <div class="post-controls">
+        <form method="post" action="{% url 'like_comment' comment.pk %}">
+          {% csrf_token %}<button name="action" value="{% if comment.is_liked %}unlike{% else %}like{% endif %}" aria-pressed="{{ comment.is_liked|yesno:'true,false' }}">{% if comment.is_liked %}Unlike{% else %}Like{% endif %} · {{ comment.like_count }}</button>
+        </form>
+        <a href="{% url 'comment_link' comment.pk %}">Permalink</a>
+      </div>
+      <details>
+        <summary>Reply to {{ comment.author.username }}</summary>
+        <form method="post" class="django-form">
+          {% csrf_token %}<input type="hidden" name="parent_id" value="{{ comment.pk }}">
+          <label for="reply-{{ comment.pk }}">Your reply</label>
+          <textarea id="reply-{{ comment.pk }}" name="content" maxlength="1000" rows="2" required></textarea>
+          <button class="primary">Post reply</button>
+        </form>
+      </details>
+    </article>
+  {% empty %}<p class="muted">Be the first to comment.</p>{% endfor %}
+  {% include 'social/pagination.html' %}
+  <form method="post" class="django-form">{% csrf_token %}{{ form.as_p }}{% if request.POST.parent_id %}<input type="hidden" name="parent_id" value="{{ request.POST.parent_id }}"><p class="muted">Retry your reply below.</p>{% endif %}<button class="primary">{% if request.POST.parent_id %}Post reply{% else %}Add comment{% endif %}</button></form>
+</section>
+{% if post.author_id == user.pk %}
+<details class="django-card">
+  <summary>Delete this post</summary>
+  <p>This permanently deletes the post, its comments, and its likes.</p>
+  <form method="post" action="{% url 'delete_post' post.pk %}">{% csrf_token %}<button class="danger">Delete post</button></form>
+</details>
+{% endif %}
+{% endblock %}
