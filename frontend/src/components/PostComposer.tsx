@@ -103,6 +103,7 @@ export const PostComposer: React.FC<PostComposerProps> = ({
 
   return (
     <div
+      className="post-composer"
       style={{
         padding: '1.1rem 1.25rem',
         borderBottom: '1px solid var(--border-color)',

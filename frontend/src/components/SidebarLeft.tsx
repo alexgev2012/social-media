@@ -35,6 +35,7 @@ export const SidebarLeft: React.FC<SidebarLeftProps> = ({
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
         {/* Brand Header */}
         <div
+          className="brand-header"
           onClick={() => setCurrentTab('feed')}
           style={{
             display: 'flex',
@@ -77,13 +78,16 @@ export const SidebarLeft: React.FC<SidebarLeftProps> = ({
         </div>
 
         {/* Navigation Items */}
-        <nav style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+        <nav className="primary-nav" aria-label="Main navigation" style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = currentTab === item.id;
             return (
               <button
                 key={item.id}
+                className={`nav-item nav-item-${item.id} btn-ghost:hover`}
+                aria-label={item.label}
+                title={item.label}
                 onClick={() => {
                   if ((item.id === 'notifications' || item.id === 'messages') && !user) {
                     openAuthModal();
@@ -105,7 +109,6 @@ export const SidebarLeft: React.FC<SidebarLeftProps> = ({
                   justifyContent: 'flex-start',
                   position: 'relative',
                 }}
-                className="btn-ghost:hover"
               >
                 <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
                   <Icon size={21} color={isActive ? 'var(--accent-primary)' : 'currentColor'} />
@@ -136,6 +139,9 @@ export const SidebarLeft: React.FC<SidebarLeftProps> = ({
 
           {/* AI Studio Shortcut */}
           <button
+            className="ai-nav-item"
+            aria-label="AI Studio"
+            title="AI Studio"
             onClick={openAiStudio}
             style={{
               display: 'flex',
@@ -158,6 +164,9 @@ export const SidebarLeft: React.FC<SidebarLeftProps> = ({
           {/* Profile link */}
           {user ? (
             <button
+              className="profile-nav-item"
+              aria-label="Profile"
+              title="Profile"
               onClick={() => openProfile(user.username)}
               style={{
                 display: 'flex',
@@ -168,6 +177,7 @@ export const SidebarLeft: React.FC<SidebarLeftProps> = ({
                 fontWeight: currentTab === 'profile' ? 700 : 500,
                 fontSize: '1rem',
                 color: currentTab === 'profile' ? 'var(--text-primary)' : 'var(--text-secondary)',
+              background: currentTab === 'profile' ? 'rgba(99, 102, 241, 0.12)' : 'transparent',
                 width: '100%',
                 justifyContent: 'flex-start',
               }}
@@ -181,6 +191,8 @@ export const SidebarLeft: React.FC<SidebarLeftProps> = ({
         {/* Primary New Post Action Button */}
         <button
           className="btn-primary btn-new-post"
+          aria-label="Create a post"
+          title="Create a post"
           onClick={() => {
             if (!user) {
               openAuthModal();

@@ -120,6 +120,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
 
   return (
     <div
+      className={`chat-view${isMobileChatOpen ? ' chat-open' : ''}`}
       style={{
         display: 'flex',
         height: '100vh',
@@ -128,6 +129,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
     >
       {/* Left Column: Conversations List */}
       <div
+        className="chat-conversation-list"
         style={{
           width: isMobileChatOpen ? '0' : '100%',
           maxWidth: '300px',
@@ -267,6 +269,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
 
       {/* Right Column: Chat History & Input */}
       <div
+        className="chat-history-col"
         style={{
           flex: 1,
           display: 'flex',

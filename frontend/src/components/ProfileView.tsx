@@ -81,6 +81,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     <div>
       {/* Top Header */}
       <div
+        className="profile-topbar"
         style={{
           display: 'flex',
           alignItems: 'center',

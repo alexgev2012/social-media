@@ -26,6 +26,7 @@ export const StoriesBar: React.FC<StoriesBarProps> = ({
 
   return (
     <div
+      className="stories-bar"
       style={{
         display: 'flex',
         alignItems: 'center',

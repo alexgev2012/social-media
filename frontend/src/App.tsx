@@ -147,6 +147,7 @@ const MainApp: React.FC = () => {
           <>
             {/* Header Tabs (50% / 50% split) */}
             <div
+              className="feed-tab-bar"
               style={{
                 position: 'sticky',
                 top: 0,
