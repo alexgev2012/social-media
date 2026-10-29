@@ -3,11 +3,17 @@ from uuid import uuid4
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.db.models.functions import Lower
+from django.utils import timezone
 
 
 def image_path(instance, filename):
     # The upload form re-encodes images as JPEG before storage.
     return f"images/{uuid4().hex}.jpg"
+
+
+def video_path(instance, filename):
+    ext = filename.split(".")[-1] if "." in filename else "mp4"
+    return f"videos/{uuid4().hex}.{ext}"
 
 
 class User(AbstractUser):
@@ -21,11 +27,29 @@ class User(AbstractUser):
             models.UniqueConstraint(Lower("email"), name="user_email_ci_unique"),
         ]
 
+    @property
+    def initials(self):
+        first = (self.first_name or "").strip()
+        last = (self.last_name or "").strip()
+        if first and last:
+            return f"{first[0]}{last[0]}".upper()
+        if first:
+            return first[:2].upper()
+        if self.username:
+            return self.username[:2].upper()
+        return "U"
+
+    @property
+    def display_name(self):
+        full = f"{self.first_name} {self.last_name}".strip()
+        return full if full else self.username
+
 
 class Post(models.Model):
     author = models.ForeignKey(User, on_delete=models.CASCADE, related_name="posts")
     content = models.TextField(max_length=1000, blank=True)
     image = models.ImageField(upload_to=image_path, blank=True)
+    video = models.FileField(upload_to=video_path, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
     liked_by = models.ManyToManyField(User, through="PostLike", related_name="liked_posts")
@@ -33,7 +57,8 @@ class Post(models.Model):
     class Meta:
         ordering = ["-created_at", "-pk"]
         constraints = [models.CheckConstraint(
-            condition=~models.Q(content="") | ~models.Q(image=""), name="post_has_content_or_image"
+            condition=~models.Q(content="") | ~models.Q(image="") | ~models.Q(video=""),
+            name="post_has_content_or_image_or_video"
         )]
 
 
@@ -51,6 +76,7 @@ class Comment(models.Model):
 class PostLike(models.Model):
     post = models.ForeignKey(Post, on_delete=models.CASCADE)
     user = models.ForeignKey(User, on_delete=models.CASCADE)
+    created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["post", "user"], name="unique_post_like")]
@@ -59,6 +85,7 @@ class PostLike(models.Model):
 class Follow(models.Model):
     follower = models.ForeignKey(User, on_delete=models.CASCADE, related_name="following")
     following = models.ForeignKey(User, on_delete=models.CASCADE, related_name="followers")
+    created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
         constraints = [
@@ -70,9 +97,61 @@ class Follow(models.Model):
 class CommentLike(models.Model):
     comment = models.ForeignKey(Comment, on_delete=models.CASCADE, related_name="likes")
     user = models.ForeignKey(User, on_delete=models.CASCADE)
+    created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["comment", "user"], name="unique_comment_like")]
+
+
+class Story(models.Model):
+    author = models.ForeignKey(User, on_delete=models.CASCADE, related_name="stories")
+    image = models.ImageField(upload_to=image_path, blank=True)
+    video = models.FileField(upload_to=video_path, blank=True)
+    caption = models.CharField(max_length=280, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    liked_by = models.ManyToManyField(User, through="StoryLike", related_name="liked_stories")
+
+    class Meta:
+        ordering = ["created_at", "pk"]
+
+
+class StoryLike(models.Model):
+    story = models.ForeignKey(Story, on_delete=models.CASCADE, related_name="likes")
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["story", "user"], name="unique_story_like")]
+
+
+class Conversation(models.Model):
+    user1 = models.ForeignKey(User, on_delete=models.CASCADE, related_name="conversations_as_user1")
+    user2 = models.ForeignKey(User, on_delete=models.CASCADE, related_name="conversations_as_user2")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["user1", "user2"], name="unique_conversation_pair"),
+        ]
+        ordering = ["-updated_at"]
+
+    @classmethod
+    def get_or_create_pair(cls, u1, u2):
+        if u1.pk > u2.pk:
+            u1, u2 = u2, u1
+        return cls.objects.get_or_create(user1=u1, user2=u2)
+
+
+class Message(models.Model):
+    conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name="messages")
+    sender = models.ForeignKey(User, on_delete=models.CASCADE, related_name="sent_messages")
+    content = models.TextField(max_length=2000)
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["created_at", "pk"]
 
 
 class Notification(models.Model):
@@ -82,12 +161,15 @@ class Notification(models.Model):
         REPLY = "reply", "replied to your comment"
         COMMENT_LIKE = "comment_like", "liked your comment"
         FOLLOW = "follow", "started following you"
+        STORY_LIKE = "story_like", "liked your story"
+        MESSAGE = "message", "sent you a message"
 
     recipient = models.ForeignKey(User, on_delete=models.CASCADE, related_name="notifications")
     actor = models.ForeignKey(User, on_delete=models.CASCADE, related_name="sent_notifications")
     kind = models.CharField(max_length=20, choices=Kind.choices)
     post = models.ForeignKey(Post, null=True, blank=True, on_delete=models.CASCADE)
     comment = models.ForeignKey(Comment, null=True, blank=True, on_delete=models.CASCADE)
+    story = models.ForeignKey(Story, null=True, blank=True, on_delete=models.CASCADE)
     is_read = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 

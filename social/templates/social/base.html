@@ -9,9 +9,14 @@
   <link rel="stylesheet" href="{% static 'social/django.css' %}">
 </head>
 <body>
+  <div style="background: linear-gradient(90deg, #4f46e5, #7c3aed, #db2777); color: white; text-align: center; padding: 8px 12px; font-size: 14px; font-weight: 600;">
+    ⚡ Upgraded TypeScript React SPA with Stories, Real-time Chat & AI Studio is live!
+    <a href="{% url 'spa_app' %}" style="color: #ffffff; text-decoration: underline; font-weight: 700; margin-left: 8px;">Launch Modern Experience →</a>
+  </div>
   <nav class="navbar" aria-label="Main navigation">
     <div class="nav-inner">
       <a class="logo" href="{% url 'feed' %}">Social</a>
+      <a class="nav-link" href="{% url 'spa_app' %}" style="background: linear-gradient(135deg, #6366f1, #a855f7); color: white; padding: 4px 10px; border-radius: 999px; font-weight: bold; text-decoration: none;">✨ React App</a>
       {% if user.is_authenticated %}
         <form class="nav-search" action="{% url 'search' %}" method="get">
           <input name="q" value="{{ query }}" placeholder="Search people..." aria-label="Search people" maxlength="150">

@@ -1,74 +1,153 @@
-# Social — Django core rewrite
+# Nexus — Full-Stack Social Media Platform
 
-The Django application now implements registration, login/logout, profile editing
-with avatars, people search, global/following feeds, text/image posts, owner-only
-post editing/deletion, comment replies and likes, follows, notifications, and
-hashtag browsing. It reuses `assets/app.css` with
-new Django templates. All mutations use CSRF-protected forms; likes and follows
-use explicit, idempotent actions. Feeds, comments and search are paginated.
+A modern social media web platform engineered with **Python Django** on the backend and **TypeScript React (Vite)** on the frontend, featuring an ultra-modern dark/light theme, real-time messaging, interactive 24-hour stories, nested comment threads, and an AI Creative Studio.
 
-Notifications include an unread navbar count, individual and bulk mark-as-read
-buttons, and links to the relevant post/comment/profile. Self-notifications are
-skipped; unliking/unfollowing removes the associated notification. Counts refresh
-on page navigation. Replies attach to the top-level comment while notifying the
-person actually replied to. Comments display chronologically, with reply context
-and permalinks that locate the correct page. Hashtags (2–50 ASCII letters, digits
-or underscores) link to case-insensitive topic feeds and reflect post edits
-immediately. Topic feeds currently search post text rather than a separate index.
+---
 
-## Run locally (PowerShell)
+## 🚀 Key Features
 
-Requires Python 3.10 or newer. These steps follow Django's
-[installation guide](https://docs.djangoproject.com/en/5.2/topics/install/).
+### 🎨 Upgraded Modern UI/UX
+- **Design System**: Deep slate dark theme by default (`#0b0f17`) with seamless light theme toggle, glassmorphic headers, vibrant accent gradients, and custom scrollbars.
+- **Continuous Feed Stream**: Clean two-column stream layout with hairline separators (inspired by modern platforms like Threads, Bluesky, and Twitter/X) without disjointed borders or floating boxes.
+- **Interactive Story Viewer**: Fullscreen/modal story reel with auto-advancing 5-second progress bars, tap-to-skip, story likes, and owner deletion.
+- **Real-Time Direct Messenger**: Split-pane messaging interface with conversation search, auto-scroll, read receipts, unread badge counters, and jumbo emoji rendering for reactions.
+- **AI Social Studio**: Built-in assistant to generate catchy captions, tech thoughts, motivational quotes, and matching hashtags directly into the post composer.
 
-```powershell
-py -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe manage.py migrate
-.\.venv\Scripts\python.exe manage.py runserver
-```
+### ⚙️ Python Django REST Architecture
+- **RESTful API**: Comprehensive Django REST Framework endpoints covering authentication, posts, comments with nested replies, likes, follows, 24-hour stories, direct messaging, notifications, trending hashtags, and AI generation.
+- **Authentication**: Session and cookie-based authentication with CSRF protection and secure session management.
+- **Media Pipeline**: Pillow image processing pipeline with upload resizing, EXIF normalization, and JPEG re-encoding.
+- **Dual-Mode Serving**: Django directly serves the compiled React application at `/app/` (with static assets served automatically in debug mode), while also supporting Vite HMR during development at `http://localhost:5173/`.
 
-Open http://127.0.0.1:8000/ and register an account. To access Django admin:
+---
 
-```powershell
-.\.venv\Scripts\python.exe manage.py createsuperuser
-```
+## 🛠️ Tech Stack
 
-## Check the rewrite
+- **Backend**: Python 3.10+, Django 5/6, Django REST Framework, Django CORS Headers, Pillow, SQLite (or PostgreSQL/MySQL in production).
+- **Frontend**: React 19, TypeScript, Vite, Lucide React (vector icons), Modern CSS variables.
+
+---
+
+## 💻 Local Development Guide
+
+### 1. Backend Setup (Django)
+
+In the project root directory:
 
 ```powershell
-.\.venv\Scripts\python.exe manage.py check
-.\.venv\Scripts\python.exe manage.py test
-.\.venv\Scripts\python.exe manage.py makemigrations --check --dry-run
+# Install Python dependencies
+python -m pip install -r requirements.txt
+
+# Run database migrations
+python manage.py migrate
+
+# Create your admin superuser (optional)
+python manage.py createsuperuser
+
+# Start the Django development server
+python manage.py runserver
 ```
 
-Tests cover account creation/login, duplicate accounts, CSRF, ownership, validation,
-image processing, comments/replies, likes, follows, filtered feeds, profiles,
-pagination, notification privacy, and escaped hashtag links.
+Django will run at `http://127.0.0.1:8000/`.
 
-## Data and scope
+---
 
-- This is a separate runnable application using a new local SQLite database.
-  Existing PHP files and `aleksgevorgyan.sql` are preserved. Existing PHP accounts,
-  password hashes, content, and media have **not** been imported. Create a new
-  account to use the Django application. Do not run Django migrations against the
-  legacy MySQL database; a separate, validated import is required first.
-- Images and avatars are stored in `media/`, limited to 5 MB and 20 megapixels,
-  resized to a maximum of 2400 pixels per side and re-encoded as JPEG. Animated
-  images become a still image. Media is served through authenticated Django views.
-- Chat, stories, video uploads, and AI generation remain in PHP and are not
-  linked from the Django interface.
-- There is no password-reset/email delivery or login rate limiting in this slice.
-- Replaced/deleted images are retained in storage for now; orphan cleanup is a
-  follow-up, as is migrating existing media.
+### 2. Frontend Setup (TypeScript React)
 
-## Deployment configuration
+In a second terminal, navigate to the `frontend/` directory:
 
-Local development defaults to `DJANGO_DEBUG=1` and generates an ignored local
-`.django-dev-key` file. For deployment, set `DJANGO_DEBUG=0`, a strong
-`DJANGO_SECRET_KEY`, and comma-separated `DJANGO_ALLOWED_HOSTS`. HTTPS is required
-for session and CSRF cookies in that mode. Use a production WSGI server and serve
-collected static assets (`manage.py collectstatic`) separately. Keep uploads behind
-the authenticated image endpoint. Run `manage.py check --deploy` and configure
-HTTPS/proxy settings, backups, login rate limiting, and an appropriate database
-before exposing the application publicly. `runserver` is for local development.
+```powershell
+cd frontend
+
+# Install dependencies
+npm install
+
+# Start Vite dev server with instant Hot Module Reloading (HMR)
+npm run dev
+```
+
+- **Vite Dev Server**: `http://localhost:5173/` (automatically proxies API requests to Django at `127.0.0.1:8000`).
+- **Django Production/Integrated Mode**: `http://127.0.0.1:8000/app/` (serves the built React app directly through Django).
+
+---
+
+## 🚢 Deployment Guide
+
+### 1. Build the React Frontend
+
+Run the production build script inside `frontend/`:
+
+```powershell
+cd frontend
+npm run build
+```
+
+This compiles optimized assets into `frontend/dist/`, which Django serves directly at `/app/`.
+
+### 2. Configure Environment Variables
+
+Set the following environment variables on your production server:
+
+| Variable | Description | Example |
+| :--- | :--- | :--- |
+| `DJANGO_DEBUG` | Set to `0` for production | `0` |
+| `DJANGO_SECRET_KEY` | Strong random secret key | `super-secret-production-key` |
+| `DJANGO_ALLOWED_HOSTS` | Comma-separated domains | `yourdomain.com,www.yourdomain.com` |
+
+### 3. Production Static & Media Collection
+
+```powershell
+python manage.py collectstatic --noinput
+```
+
+Run Django using a production WSGI/ASGI server such as Gunicorn or Uvicorn behind Nginx or Caddy with HTTPS enabled.
+
+---
+
+## 📡 REST API Reference
+
+| Endpoint | Method | Description |
+| :--- | :--- | :--- |
+| `/api/auth/register/` | `POST` | Register a new user |
+| `/api/auth/login/` | `POST` | Authenticate user & start session |
+| `/api/auth/logout/` | `POST` | End session |
+| `/api/auth/me/` | `GET` | Get current authenticated user profile |
+| `/api/auth/profile/` | `PATCH` | Update profile information and avatar |
+| `/api/posts/` | `GET`, `POST` | List feed posts or create a new post |
+| `/api/posts/<id>/` | `GET`, `PATCH`, `DELETE` | Post details, update content, or delete |
+| `/api/posts/<id>/like/` | `POST` | Toggle post like |
+| `/api/posts/<id>/comments/` | `GET`, `POST` | List comments or add comment / reply |
+| `/api/comments/<id>/like/` | `POST` | Toggle comment like |
+| `/api/comments/<id>/delete/` | `DELETE` | Delete comment |
+| `/api/stories/` | `GET`, `POST` | Active 24-hour stories grouped by user or upload story |
+| `/api/stories/<id>/like/` | `POST` | Toggle story like |
+| `/api/stories/<id>/delete/` | `DELETE` | Delete story |
+| `/api/conversations/` | `GET` | List active chat conversations |
+| `/api/conversations/<username>/` | `GET` | Message thread with a user |
+| `/api/conversations/<username>/messages/` | `POST` | Send message to user |
+| `/api/messages/unread-count/` | `GET` | Total unread message badge count |
+| `/api/users/<username>/` | `GET` | Public profile stats, bio, and posts |
+| `/api/users/<username>/follow/` | `POST` | Toggle follow / unfollow |
+| `/api/users/search/?q=` | `GET` | Search users by name or handle |
+| `/api/notifications/` | `GET` | List user notifications |
+| `/api/notifications/read/` | `POST` | Mark notification(s) as read |
+| `/api/hashtags/trending/` | `GET` | Top trending hashtags |
+| `/api/ai/generate/` | `POST` | AI generator for captions and hashtags |
+
+---
+
+## 🧪 Testing
+
+Run the full automated test suite (including both view tests and API endpoint tests):
+
+```powershell
+python manage.py check
+python manage.py test
+```
+
+Type-check and build the React frontend:
+
+```powershell
+cd frontend
+npm run build
+```

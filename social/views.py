@@ -248,3 +248,12 @@ def hashtag(request, tag):
     posts = post_queryset(request.user).filter(content__iregex=rf"#{tag}(?![a-zA-Z0-9_])")
     page = Paginator(posts, 20).get_page(request.GET.get("page"))
     return render(request, "social/hashtag.html", {"tag": tag, "page_obj": page})
+
+
+def spa_app(request, path=""):
+    from django.conf import settings
+    from django.http import HttpResponse
+    dist_index = settings.BASE_DIR / "frontend" / "dist" / "index.html"
+    if dist_index.exists():
+        return HttpResponse(dist_index.read_text(encoding="utf-8"))
+    return HttpResponse("Please run 'npm run build' in the frontend folder first.")
