@@ -16,7 +16,20 @@ if not SECRET_KEY:
         pass
     SECRET_KEY = key_file.read_text().strip()
 
-ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1,[::1]").split(",")
+def parse_allowed_hosts(configured_hosts, render_external_hostname=""):
+    if configured_hosts is None:
+        configured_hosts = "localhost,127.0.0.1,[::1]"
+    hosts = [host.strip() for host in configured_hosts.split(",") if host.strip()]
+    render_hostname = render_external_hostname.strip()
+    if render_hostname and render_hostname not in hosts:
+        hosts.append(render_hostname)
+    return hosts
+
+
+ALLOWED_HOSTS = parse_allowed_hosts(
+    os.environ.get("DJANGO_ALLOWED_HOSTS"),
+    os.environ.get("RENDER_EXTERNAL_HOSTNAME", ""),
+)
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -56,6 +69,30 @@ TEMPLATES = [{
 }]
 
 WSGI_APPLICATION = "config.wsgi.application"
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "host_diagnostic": {
+            "format": "{levelname} {name}: {message}",
+            "style": "{",
+        },
+    },
+    "handlers": {
+        "host_diagnostic_console": {
+            "class": "logging.StreamHandler",
+            "formatter": "host_diagnostic",
+        },
+    },
+    "loggers": {
+        "django.security.DisallowedHost": {
+            "handlers": ["host_diagnostic_console"],
+            "level": "WARNING",
+            "propagate": False,
+        },
+    },
+}
 
 if os.environ.get("DATABASE_URL"):
     import dj_database_url
