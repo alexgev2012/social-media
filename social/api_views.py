@@ -135,7 +135,11 @@ def persist_uploads(instance, uploaded_files):
                 target_storage.delete(stored_name)
             except Exception:
                 logger.warning("Failed to clean up a partially stored media upload.")
-        logger.error("Media storage failed (error_type=%s).", type(exc).__name__)
+        logger.error(
+            "Media storage failed (error_type=%s, http_status=%s).",
+            type(exc).__name__,
+            getattr(exc, "status_code", None),
+        )
         raise MediaStorageError from None
     try:
         with transaction.atomic():

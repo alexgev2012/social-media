@@ -14,7 +14,10 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         if not settings.MEDIA_STORAGE_CONFIGURED:
-            raise CommandError("Configure all SUPABASE_STORAGE_* settings before migrating media.")
+            raise CommandError(
+                "Configure SUPABASE_URL, SUPABASE_SECRET_KEY (or SUPABASE_SERVICE_ROLE_KEY), "
+                "and SUPABASE_STORAGE_BUCKET before migrating media."
+            )
 
         local_storage = FileSystemStorage(location=settings.MEDIA_ROOT)
         dry_run = options["dry_run"]

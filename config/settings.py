@@ -1,6 +1,7 @@
 import os
 import secrets
 from pathlib import Path
+from urllib.parse import urlsplit
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DEBUG = os.environ.get("DJANGO_DEBUG", "0" if os.environ.get("RENDER") else "1") == "1"
@@ -127,41 +128,52 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 MEDIA_ROOT = BASE_DIR / "media"
 MEDIA_URL = "/media/"
 
-# Supabase's S3 endpoint is accessed only by Django. These credentials must
-# never be supplied as Vite (VITE_*) environment variables.
-SUPABASE_STORAGE_BUCKET = os.environ.get("SUPABASE_STORAGE_BUCKET", "social-media")
-SUPABASE_STORAGE_REGION = os.environ.get("SUPABASE_STORAGE_REGION", "")
-SUPABASE_STORAGE_ENDPOINT = os.environ.get("SUPABASE_STORAGE_ENDPOINT", "").strip().rstrip("/")
-SUPABASE_STORAGE_PUBLIC_URL = os.environ.get("SUPABASE_STORAGE_PUBLIC_URL", "").strip().rstrip("/")
-SUPABASE_STORAGE_ACCESS_KEY_ID = os.environ.get("SUPABASE_STORAGE_ACCESS_KEY_ID", "")
-SUPABASE_STORAGE_SECRET_ACCESS_KEY = os.environ.get("SUPABASE_STORAGE_SECRET_ACCESS_KEY", "")
-MEDIA_STORAGE_CONFIGURED = all((
-    SUPABASE_STORAGE_BUCKET,
-    SUPABASE_STORAGE_REGION,
-    SUPABASE_STORAGE_ENDPOINT,
-    SUPABASE_STORAGE_PUBLIC_URL,
-    SUPABASE_STORAGE_ACCESS_KEY_ID,
-    SUPABASE_STORAGE_SECRET_ACCESS_KEY,
-))
+def read_supabase_storage_config(environ):
+    """Read and normalize the server-side Supabase Storage settings."""
+    project_url = environ.get("SUPABASE_URL", "").strip().rstrip("/")
+    server_key = (
+        environ.get("SUPABASE_SECRET_KEY", "").strip()
+        or environ.get("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+    )
+    bucket = environ.get("SUPABASE_STORAGE_BUCKET", "").strip() or "nexus-media"
+    return project_url, server_key, bucket
 
+
+def supabase_storage_is_configured(project_url, service_role_key, bucket, *, debug):
+    project_url = project_url.strip().rstrip("/")
+    service_role_key = service_role_key.strip()
+    bucket = bucket.strip()
+    parsed_url = urlsplit(project_url)
+    allowed_schemes = {"https", "http"} if debug else {"https"}
+    return bool(
+        project_url
+        and parsed_url.scheme in allowed_schemes
+        and parsed_url.netloc
+        and service_role_key
+        and bucket
+    )
+
+
+SUPABASE_URL, SUPABASE_STORAGE_SERVER_KEY, SUPABASE_STORAGE_BUCKET = read_supabase_storage_config(os.environ)
+MEDIA_STORAGE_CONFIGURED = supabase_storage_is_configured(
+    SUPABASE_URL,
+    SUPABASE_STORAGE_SERVER_KEY,
+    SUPABASE_STORAGE_BUCKET,
+    debug=DEBUG,
+)
+
+
+def default_media_storage_backend(debug, configured):
+    if configured or not debug:
+        return "social.storage.SupabasePublicMediaStorage"
+    return "django.core.files.storage.FileSystemStorage"
+
+
+# Development keeps filesystem storage unless remote storage is explicitly
+# configured. Production always uses the remote backend, whose operations fail
+# clearly if required settings are missing; it never falls back to Render disk.
 STORAGES = {
-    "default": ({
-        "BACKEND": "social.storage.SupabasePublicMediaStorage",
-        "OPTIONS": {
-            "bucket_name": SUPABASE_STORAGE_BUCKET,
-            "region_name": SUPABASE_STORAGE_REGION,
-            "endpoint_url": SUPABASE_STORAGE_ENDPOINT,
-            "access_key": SUPABASE_STORAGE_ACCESS_KEY_ID,
-            "secret_key": SUPABASE_STORAGE_SECRET_ACCESS_KEY,
-            "addressing_style": "path",
-            "signature_version": "s3v4",
-            "querystring_auth": False,
-            "file_overwrite": False,
-            "object_parameters": {"CacheControl": "public, max-age=31536000, immutable"},
-        },
-    } if MEDIA_STORAGE_CONFIGURED else {
-        "BACKEND": "django.core.files.storage.FileSystemStorage",
-    }),
+    "default": {"BACKEND": default_media_storage_backend(DEBUG, MEDIA_STORAGE_CONFIGURED)},
     "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
 }
 MAX_VIDEO_UPLOAD_SIZE = int(os.environ.get("MAX_VIDEO_UPLOAD_SIZE", str(50 * 1024 * 1024)))

@@ -5,4 +5,3 @@ Pillow>=11.0,<13.0
 djangorestframework>=3.14.0
 django-cors-headers>=4.0.0
 psycopg[binary]>=3.2,<4.0
-django-storages[s3]>=1.14.6,<2.0
