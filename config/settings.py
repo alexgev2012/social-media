@@ -102,15 +102,26 @@ CSRF_COOKIE_SECURE = not DEBUG
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = "DENY"
 
-CORS_ALLOW_ALL_ORIGINS = True
-CORS_ALLOW_CREDENTIALS = True
-CSRF_TRUSTED_ORIGINS = [
+FRONTEND_ORIGIN = os.environ.get("FRONTEND_ORIGIN", "").strip().rstrip("/")
+LOCAL_FRONTEND_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+LOCAL_CSRF_TRUSTED_ORIGINS = LOCAL_FRONTEND_ORIGINS + [
     "http://localhost:8000",
     "http://127.0.0.1:8000",
 ]
+CORS_ALLOW_ALL_ORIGINS = False
+CORS_ALLOWED_ORIGINS = LOCAL_FRONTEND_ORIGINS + ([FRONTEND_ORIGIN] if FRONTEND_ORIGIN else [])
+CORS_ALLOW_CREDENTIALS = True
+CSRF_TRUSTED_ORIGINS = LOCAL_CSRF_TRUSTED_ORIGINS + ([FRONTEND_ORIGIN] if FRONTEND_ORIGIN else [])
+
+# The frontend and API use separate Render origins. Cross-site cookies require
+# SameSite=None; Secure is enabled for production below.
+SESSION_COOKIE_SAMESITE = "None" if not DEBUG else "Lax"
+CSRF_COOKIE_SAMESITE = "None" if not DEBUG else "Lax"
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [

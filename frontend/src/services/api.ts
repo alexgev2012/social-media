@@ -3,7 +3,8 @@ import {
   Conversation, Message, NotificationItem, TrendingTag
 } from '../types';
 
-const BASE_URL = '/api';
+const API_ORIGIN = (import.meta.env.VITE_API_URL ?? '').replace(/\/+$/, '');
+const BASE_URL = `${API_ORIGIN}/api`;
 
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const defaultHeaders: Record<string, string> = {};
