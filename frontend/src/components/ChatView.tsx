@@ -3,6 +3,7 @@ import { Send, Search, User as UserIcon, MessageSquare, ArrowLeft } from 'lucide
 import { Conversation, Message, User } from '../types';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { Avatar } from './Avatar';
 
 interface ChatViewProps {
   initialPartnerUsername?: string | null;
@@ -22,6 +23,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [suggestedUsers, setSuggestedUsers] = useState<User[]>([]);
   const [isMobileChatOpen, setIsMobileChatOpen] = useState(false);
+  const [requestError, setRequestError] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -33,21 +35,18 @@ export const ChatView: React.FC<ChatViewProps> = ({
     try {
       const data = await api.chat.getConversations();
       setConversations(data);
-    } catch {
-      // error
+      setRequestError(null);
+    } catch (error) {
+      setRequestError(error instanceof Error ? error.message : 'Could not load conversations.');
     }
   };
 
   useEffect(() => {
     loadConversations();
-    api.users.suggestions().then(setSuggestedUsers).catch(() => {});
+    api.users.suggestions().then(setSuggestedUsers).catch((error: unknown) => {
+      setRequestError(error instanceof Error ? error.message : 'Could not load suggested users.');
+    });
   }, []);
-
-  useEffect(() => {
-    if (initialPartnerUsername) {
-      openChatWithUser(initialPartnerUsername);
-    }
-  }, [initialPartnerUsername]);
 
   const openChatWithUser = async (username: string) => {
     try {
@@ -58,10 +57,15 @@ export const ChatView: React.FC<ChatViewProps> = ({
       setTimeout(scrollToBottom, 100);
       refreshBadges();
       loadConversations();
-    } catch {
-      // error
+      setRequestError(null);
+    } catch (error) {
+      setRequestError(error instanceof Error ? error.message : 'Could not open this conversation.');
     }
   };
+
+  useEffect(() => {
+    if (initialPartnerUsername) openChatWithUser(initialPartnerUsername);
+  }, [initialPartnerUsername]);
 
   useEffect(() => {
     if (!selectedPartner) return;
@@ -69,8 +73,8 @@ export const ChatView: React.FC<ChatViewProps> = ({
       try {
         const data = await api.chat.getConversation(selectedPartner.username);
         setMessages(data.messages);
-      } catch {
-        // error
+      } catch (error) {
+        setRequestError(error instanceof Error ? error.message : 'Could not refresh messages.');
       }
     }, 4000);
     return () => clearInterval(interval);
@@ -101,6 +105,8 @@ export const ChatView: React.FC<ChatViewProps> = ({
       loadConversations();
     } catch {
       setMessages(prev => prev.filter(m => m.id !== tempMsg.id));
+      setMessageText(text);
+      setRequestError('Could not send your message. Please retry.');
     } finally {
       setIsSending(false);
     }
@@ -127,6 +133,12 @@ export const ChatView: React.FC<ChatViewProps> = ({
         background: 'var(--bg-main)',
       }}
     >
+      {requestError && (
+        <div role="alert" style={{ position: 'absolute', inset: '0.5rem 0.75rem auto', zIndex: 20, padding: '0.65rem 0.8rem', borderRadius: 'var(--radius-sm)', background: 'var(--bg-card)', color: '#f87171', boxShadow: 'var(--shadow-md)' }}>
+          {requestError}{' '}
+          <button className="btn-ghost" onClick={() => setRequestError(null)} aria-label="Dismiss message">×</button>
+        </div>
+      )}
       {/* Left Column: Conversations List */}
       <div
         className="chat-conversation-list"
@@ -192,13 +204,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
                   }}
                   className="btn-ghost:hover"
                 >
-                  <div className="avatar-wrap avatar-md">
-                    {c.partner.avatar_url ? (
-                      <img src={c.partner.avatar_url} alt="" className="avatar-img" />
-                    ) : (
-                      c.partner.initials
-                    )}
-                  </div>
+                  <Avatar user={c.partner} size="md" />
                   <div style={{ flex: 1, overflow: 'hidden' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>{c.partner.display_name}</span>
@@ -298,17 +304,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
                 >
                   <ArrowLeft size={18} />
                 </button>
-                <div
-                  className="avatar-wrap avatar-md"
-                  onClick={() => onSelectUser(selectedPartner.username)}
-                  style={{ cursor: 'pointer' }}
-                >
-                  {selectedPartner.avatar_url ? (
-                    <img src={selectedPartner.avatar_url} alt="" className="avatar-img" />
-                  ) : (
-                    selectedPartner.initials
-                  )}
-                </div>
+                <Avatar user={selectedPartner} size="md" onClick={() => onSelectUser(selectedPartner.username)} style={{ cursor: 'pointer' }} />
                 <div>
                   <div
                     onClick={() => onSelectUser(selectedPartner.username)}

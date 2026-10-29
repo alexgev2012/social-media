@@ -1,7 +1,9 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { X, Camera, Save } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
+import { MediaImage } from './MediaAsset';
+import { validateImageUpload } from '../services/uploadValidation.mjs';
 
 interface EditProfileModalProps {
   onClose: () => void;
@@ -23,9 +25,20 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => () => {
+    if (avatarPreview?.startsWith('blob:')) URL.revokeObjectURL(avatarPreview);
+  }, [avatarPreview]);
+
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      const validationError = validateImageUpload(file);
+      if (validationError) {
+        setError(validationError);
+        e.currentTarget.value = '';
+        return;
+      }
+      setError(null);
       setAvatarFile(file);
       setAvatarPreview(URL.createObjectURL(file));
     }
@@ -94,7 +107,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
             >
               <div className="avatar-wrap avatar-xl">
                 {avatarPreview ? (
-                  <img src={avatarPreview} alt="Avatar" className="avatar-img" />
+                  <MediaImage src={avatarPreview} alt="Avatar" className="avatar-img" />
                 ) : (
                   user?.initials
                 )}
@@ -121,7 +134,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
               type="file"
               ref={fileInputRef}
               onChange={handleAvatarChange}
-              accept="image/*"
+              accept="image/jpeg,image/png,image/gif,image/webp"
               style={{ display: 'none' }}
             />
           </div>

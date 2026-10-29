@@ -3,6 +3,8 @@ import { X, ChevronLeft, ChevronRight, Heart, Trash2 } from 'lucide-react';
 import { StoryGroup } from '../types';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { Avatar } from './Avatar';
+import { MediaImage, MediaVideo } from './MediaAsset';
 
 interface StoryViewerModalProps {
   storyGroups: StoryGroup[];
@@ -24,6 +26,7 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
   const [isPaused, setIsPaused] = useState(false);
   const [isLiked, setIsLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(0);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const currentGroup = storyGroups[groupIndex];
   const currentStory = currentGroup?.stories[storyIndex];
@@ -93,8 +96,9 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
       const res = await api.stories.toggleLike(currentStory.id);
       setIsLiked(res.is_liked);
       setLikeCount(res.like_count);
-    } catch {
-      // error
+      setActionError(null);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Could not update story like.');
     }
   };
 
@@ -104,8 +108,8 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
       await api.stories.delete(currentStory.id);
       if (onStoryDeleted) onStoryDeleted();
       handleNext();
-    } catch {
-      // error
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Could not delete this story.');
     }
   };
 
@@ -127,6 +131,7 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
       onTouchEnd={() => setIsPaused(false)}
     >
       <div
+        className="story-viewer-panel"
         style={{
           position: 'relative',
           width: '100%',
@@ -141,6 +146,11 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
           boxShadow: '0 0 50px rgba(0, 0, 0, 0.8)',
         }}
       >
+        {actionError && (
+          <div role="alert" style={{ position: 'absolute', top: 48, left: 12, right: 12, zIndex: 30, padding: '0.65rem', borderRadius: 'var(--radius-sm)', background: 'rgba(127, 29, 29, 0.9)', color: '#fff' }}>
+            {actionError}
+          </div>
+        )}
         {/* Progress Bars */}
         <div
           style={{
@@ -196,13 +206,7 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-            <div className="avatar-wrap avatar-sm">
-              {currentGroup.user.avatar_url ? (
-                <img src={currentGroup.user.avatar_url} alt="" className="avatar-img" />
-              ) : (
-                currentGroup.user.initials
-              )}
-            </div>
+            <Avatar user={currentGroup.user} size="sm" />
             <div>
               <div style={{ fontWeight: 700, fontSize: '0.9rem', textShadow: '0 1px 3px rgba(0,0,0,0.8)' }}>
                 {currentGroup.user.display_name}
@@ -236,7 +240,7 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
           }}
         >
           {currentStory.image_url ? (
-            <img
+            <MediaImage
               src={currentStory.image_url}
               alt=""
               style={{
@@ -246,7 +250,7 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
               }}
             />
           ) : currentStory.video_url ? (
-            <video
+            <MediaVideo
               src={currentStory.video_url}
               autoPlay
               muted

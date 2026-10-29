@@ -7,13 +7,19 @@ from django.utils import timezone
 
 
 def image_path(instance, filename):
-    # The upload form re-encodes images as JPEG before storage.
-    return f"images/{uuid4().hex}.jpg"
+    # Existing database paths remain valid; new media is grouped by purpose.
+    folder = {
+        "user": "avatars",
+        "post": "posts/images",
+        "story": "stories/images",
+    }.get(instance._meta.model_name, "images")
+    return f"{folder}/{uuid4().hex}.jpg"
 
 
 def video_path(instance, filename):
     ext = filename.split(".")[-1] if "." in filename else "mp4"
-    return f"videos/{uuid4().hex}.{ext}"
+    folder = "stories/videos" if instance._meta.model_name == "story" else "posts/videos"
+    return f"{folder}/{uuid4().hex}.{ext.lower()}"
 
 
 class User(AbstractUser):

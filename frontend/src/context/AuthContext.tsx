@@ -42,6 +42,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const refreshUser = async () => {
     try {
+      await api.auth.csrf();
       const res = await api.auth.me();
       if (res.authenticated && res.user) {
         setUser(res.user);

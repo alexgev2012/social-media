@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { Heart, MessageCircle, Share2, MoreHorizontal, Edit, Trash2, Send } from 'lucide-react';
 import { Post, CommentItem } from '../types';
+import { Avatar } from './Avatar';
+import { MediaImage, MediaVideo } from './MediaAsset';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 
@@ -33,6 +35,11 @@ export const PostCard: React.FC<PostCardProps> = ({
   const [menuOpen, setMenuOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  const showToast = (message: string) => {
+    setToastMessage(message);
+    window.setTimeout(() => setToastMessage(null), 3000);
+  };
+
   const isOwner = user && user.id === post.author.id;
 
   const handleLike = async (e: React.MouseEvent) => {
@@ -49,9 +56,10 @@ export const PostCard: React.FC<PostCardProps> = ({
       const res = await api.posts.toggleLike(post.id);
       setIsLiked(res.is_liked);
       setLikeCount(res.like_count);
-    } catch {
+    } catch (error) {
       setIsLiked(!nextLiked);
       setLikeCount(prev => (!nextLiked ? prev + 1 : Math.max(0, prev - 1)));
+      showToast(error instanceof Error ? error.message : 'Could not update like.');
     }
   };
 
@@ -60,8 +68,8 @@ export const PostCard: React.FC<PostCardProps> = ({
     try {
       const data = await api.comments.list(post.id);
       setComments(data);
-    } catch {
-      // ignore
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not load comments.');
     } finally {
       setIsLoadingComments(false);
     }
@@ -88,8 +96,8 @@ export const PostCard: React.FC<PostCardProps> = ({
       setComments(prev => [...prev, newComment]);
       setCommentInput('');
       setCommentsCount(prev => prev + 1);
-    } catch {
-      // error
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not add your comment.');
     }
   };
 
@@ -107,8 +115,8 @@ export const PostCard: React.FC<PostCardProps> = ({
       setReplyParentId(null);
       setCommentsCount(prev => prev + 1);
       loadComments();
-    } catch {
-      // error
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not add your reply.');
     }
   };
 
@@ -135,8 +143,8 @@ export const PostCard: React.FC<PostCardProps> = ({
           return c;
         })
       );
-    } catch {
-      // error
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not update the comment like.');
     }
   };
 
@@ -146,8 +154,8 @@ export const PostCard: React.FC<PostCardProps> = ({
       await api.comments.delete(commentId);
       setCommentsCount(prev => Math.max(0, prev - 1));
       loadComments();
-    } catch {
-      // error
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not delete the comment.');
     }
   };
 
@@ -156,17 +164,21 @@ export const PostCard: React.FC<PostCardProps> = ({
     try {
       await api.posts.delete(post.id);
       onPostDeleted(post.id);
-    } catch {
-      // error
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not delete the post.');
     }
   };
 
-  const handleShare = (e: React.MouseEvent) => {
+  const handleShare = async (e: React.MouseEvent) => {
     e.stopPropagation();
     const url = `${window.location.origin}/#post-${post.id}`;
-    navigator.clipboard?.writeText(url);
-    setToastMessage('Link copied!');
-    setTimeout(() => setToastMessage(null), 2000);
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard access is unavailable in this browser.');
+      await navigator.clipboard.writeText(url);
+      showToast('Link copied!');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not copy the link.');
+    }
   };
 
   const formatTime = (isoString: string) => {
@@ -212,7 +224,7 @@ export const PostCard: React.FC<PostCardProps> = ({
             position: 'absolute',
             top: 10,
             right: 16,
-            background: 'var(--accent-primary)',
+            background: toastMessage === 'Link copied!' ? 'var(--accent-primary)' : '#b91c1c',
             color: '#fff',
             fontSize: '0.78rem',
             fontWeight: 600,
@@ -228,17 +240,7 @@ export const PostCard: React.FC<PostCardProps> = ({
 
       {/* Left Column: Author Avatar */}
       <div style={{ flexShrink: 0 }}>
-        <div
-          className="avatar-wrap avatar-md"
-          onClick={() => onSelectUser(post.author.username)}
-          style={{ cursor: 'pointer' }}
-        >
-          {post.author.avatar_url ? (
-            <img src={post.author.avatar_url} alt="" className="avatar-img" />
-          ) : (
-            post.author.initials
-          )}
-        </div>
+        <Avatar user={post.author} size="md" onClick={() => onSelectUser(post.author.username)} style={{ cursor: 'pointer' }} />
       </div>
 
       {/* Right Column: Main Post Body & Thread */}
@@ -358,7 +360,7 @@ export const PostCard: React.FC<PostCardProps> = ({
               background: '#000',
             }}
           >
-            <img
+            <MediaImage
               src={post.image_url}
               alt="Post attachment"
               style={{ width: '100%', maxHeight: '440px', objectFit: 'cover', display: 'block' }}
@@ -377,7 +379,7 @@ export const PostCard: React.FC<PostCardProps> = ({
               background: '#000',
             }}
           >
-            <video
+            <MediaVideo
               src={post.video_url}
               controls
               preload="metadata"
@@ -536,17 +538,7 @@ export const PostCard: React.FC<PostCardProps> = ({
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                 {comments.map((c) => (
                   <div key={c.id} style={{ display: 'flex', gap: '0.65rem' }}>
-                    <div
-                      className="avatar-wrap avatar-sm"
-                      onClick={() => onSelectUser(c.author.username)}
-                      style={{ cursor: 'pointer' }}
-                    >
-                      {c.author.avatar_url ? (
-                        <img src={c.author.avatar_url} alt="" className="avatar-img" />
-                      ) : (
-                        c.author.initials
-                      )}
-                    </div>
+                    <Avatar user={c.author} size="sm" onClick={() => onSelectUser(c.author.username)} style={{ cursor: 'pointer' }} />
 
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div
@@ -646,17 +638,7 @@ export const PostCard: React.FC<PostCardProps> = ({
                         >
                           {c.replies.map((r) => (
                             <div key={r.id} style={{ display: 'flex', gap: '0.5rem' }}>
-                              <div
-                                className="avatar-wrap avatar-xs"
-                                onClick={() => onSelectUser(r.author.username)}
-                                style={{ cursor: 'pointer' }}
-                              >
-                                {r.author.avatar_url ? (
-                                  <img src={r.author.avatar_url} alt="" className="avatar-img" />
-                                ) : (
-                                  r.author.initials
-                                )}
-                              </div>
+                              <Avatar user={r.author} size="xs" onClick={() => onSelectUser(r.author.username)} style={{ cursor: 'pointer' }} />
                               <div style={{ flex: 1, minWidth: 0 }}>
                                 <div
                                   style={{

@@ -3,55 +3,56 @@ import { Search, Hash, UserPlus, UserCheck, Sparkles, X } from 'lucide-react';
 import { User, TrendingTag } from '../types';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { Avatar } from './Avatar';
+import { scheduleUserSearch } from '../services/debouncedUserSearch.mjs';
 
 interface SidebarRightProps {
   onSelectTag: (tag: string) => void;
   onSelectUser: (username: string) => void;
   onOpenAiStudio: () => void;
+  embedded?: boolean;
 }
 
 export const SidebarRight: React.FC<SidebarRightProps> = ({
   onSelectTag,
   onSelectUser,
   onOpenAiStudio,
+  embedded = false,
 }) => {
   const { user, openAuthModal } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<User[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
+  const [searchSnapshot, setSearchSnapshot] = useState<{ query: string; results: User[]; error: string | null }>({
+    query: '', results: [], error: null,
+  });
   const [trendingTags, setTrendingTags] = useState<TrendingTag[]>([]);
   const [suggestedUsers, setSuggestedUsers] = useState<User[]>([]);
   const [followingMap, setFollowingMap] = useState<Record<string, boolean>>({});
+  const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
-    api.hashtags.trending().then(setTrendingTags).catch(() => {});
+    api.hashtags.trending().then(setTrendingTags).catch((error: unknown) => {
+      setActionError(error instanceof Error ? error.message : 'Could not load trending tags.');
+    });
     api.users.suggestions().then((users) => {
       setSuggestedUsers(users);
       const initialMap: Record<string, boolean> = {};
       users.forEach(u => { initialMap[u.username] = !!u.is_following; });
       setFollowingMap(initialMap);
-    }).catch(() => {});
+    }).catch((error: unknown) => {
+      setActionError(error instanceof Error ? error.message : 'Could not load suggested users.');
+    });
   }, [user]);
 
   useEffect(() => {
-    if (!searchQuery.trim()) {
-      setSearchResults([]);
-      setIsSearching(false);
-      return;
-    }
-    const timer = setTimeout(async () => {
-      setIsSearching(true);
-      try {
-        const results = await api.users.search(searchQuery);
-        setSearchResults(results);
-      } catch {
-        setSearchResults([]);
-      } finally {
-        setIsSearching(false);
-      }
-    }, 250);
-    return () => clearTimeout(timer);
+    return scheduleUserSearch(searchQuery, api.users.search, setSearchSnapshot, 300);
   }, [searchQuery]);
+
+  const normalizedQuery = searchQuery.trim();
+  const isTagQuery = normalizedQuery.startsWith('#');
+  const hasCurrentSearch = searchSnapshot.query === normalizedQuery;
+  const searchResults = hasCurrentSearch ? searchSnapshot.results : [];
+  const searchError = hasCurrentSearch ? searchSnapshot.error : null;
+  const isSearching = Boolean(normalizedQuery && !isTagQuery && !hasCurrentSearch);
 
   const handleToggleFollow = async (targetUsername: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -62,13 +63,14 @@ export const SidebarRight: React.FC<SidebarRightProps> = ({
     try {
       const res = await api.users.toggleFollow(targetUsername);
       setFollowingMap(prev => ({ ...prev, [targetUsername]: res.is_following }));
-    } catch {
-      // error
+      setActionError(null);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Could not update follow status.');
     }
   };
 
   return (
-    <aside className="right-sidebar-col">
+    <aside className={`right-sidebar-col${embedded ? ' embedded-sidebar' : ''}`}>
       {/* Search Input Bar */}
       <div style={{ position: 'relative' }}>
         <div
@@ -86,11 +88,12 @@ export const SidebarRight: React.FC<SidebarRightProps> = ({
           <input
             type="text"
             placeholder="Search people or #tags..."
+            aria-label="Search people or hashtags"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && searchQuery.startsWith('#')) {
-                onSelectTag(searchQuery.replace('#', ''));
+              if (e.key === 'Enter' && searchQuery.trim().startsWith('#')) {
+                onSelectTag(searchQuery.trim().slice(1).trim());
                 setSearchQuery('');
               }
             }}
@@ -113,7 +116,9 @@ export const SidebarRight: React.FC<SidebarRightProps> = ({
         {/* Search Results Popover */}
         {searchQuery.trim() && (
           <div
-            className="panel"
+            className="panel search-results-popover"
+            role="status"
+            aria-live="polite"
             style={{
               position: 'absolute',
               top: '110%',
@@ -126,13 +131,21 @@ export const SidebarRight: React.FC<SidebarRightProps> = ({
               boxShadow: 'var(--shadow-md)',
             }}
           >
-            {isSearching ? (
+            {isTagQuery ? (
+              <div style={{ padding: '0.75rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.84rem' }}>
+                Press Enter to view #{searchQuery.trim().slice(1).trim()} posts.
+              </div>
+            ) : isSearching ? (
               <div style={{ padding: '0.75rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.84rem' }}>
                 Searching...
               </div>
+            ) : searchError ? (
+              <div style={{ padding: '0.75rem', textAlign: 'center', color: '#f87171', fontSize: '0.84rem' }}>
+                {searchError}
+              </div>
             ) : searchResults.length > 0 ? (
               searchResults.map((resUser) => (
-                <div
+                <button
                   key={resUser.id}
                   onClick={() => {
                     onSelectUser(resUser.username);
@@ -144,31 +157,35 @@ export const SidebarRight: React.FC<SidebarRightProps> = ({
                     gap: '0.65rem',
                     padding: '0.55rem 0.75rem',
                     borderRadius: 'var(--radius-sm)',
-                    cursor: 'pointer',
+                    width: '100%',
+                    textAlign: 'left',
                   }}
-                  className="btn-ghost:hover"
+                  className="search-result-item"
+                  type="button"
+                  aria-label={`Open ${resUser.display_name}, @${resUser.username}`}
                 >
-                  <div className="avatar-wrap avatar-sm">
-                    {resUser.avatar_url ? (
-                      <img src={resUser.avatar_url} alt="" className="avatar-img" />
-                    ) : (
-                      resUser.initials
-                    )}
-                  </div>
+                  <Avatar user={resUser} size="sm" />
                   <div>
                     <div style={{ fontWeight: 700, fontSize: '0.88rem' }}>{resUser.display_name}</div>
                     <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>@{resUser.username}</div>
                   </div>
-                </div>
+                </button>
               ))
             ) : (
               <div style={{ padding: '0.75rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.84rem' }}>
-                No users found. Press Enter to view #{searchQuery.replace('#', '')}
+                No users found. Try a username or name.
               </div>
             )}
           </div>
         )}
       </div>
+
+      {actionError && (
+        <div role="alert" style={{ padding: '0.7rem 0.85rem', borderRadius: 'var(--radius-sm)', background: 'rgba(239, 68, 68, 0.12)', color: '#f87171', fontSize: '0.84rem' }}>
+          {actionError}{' '}
+          <button className="btn-ghost" onClick={() => setActionError(null)} aria-label="Dismiss message">×</button>
+        </div>
+      )}
 
       {/* Trending Topics Module */}
       <div className="panel" style={{ padding: '1rem' }}>
@@ -221,13 +238,7 @@ export const SidebarRight: React.FC<SidebarRightProps> = ({
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-                  <div className="avatar-wrap avatar-sm">
-                    {sUser.avatar_url ? (
-                      <img src={sUser.avatar_url} alt="" className="avatar-img" />
-                    ) : (
-                      sUser.initials
-                    )}
-                  </div>
+                  <Avatar user={sUser} size="sm" />
                   <div style={{ overflow: 'hidden' }}>
                     <div style={{ fontWeight: 700, fontSize: '0.86rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {sUser.display_name}

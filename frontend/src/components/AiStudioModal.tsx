@@ -17,6 +17,7 @@ export const AiStudioModal: React.FC<AiStudioModalProps> = ({
   const [generatedTags, setGeneratedTags] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const topics = [
     { id: 'tech', label: '💻 Tech Innovation' },
@@ -29,6 +30,7 @@ export const AiStudioModal: React.FC<AiStudioModalProps> = ({
 
   const handleGenerate = async (topicId?: string) => {
     setIsLoading(true);
+    setError(null);
     try {
       const activeTopic = topicId || selectedTopic;
       const res = await api.ai.generate({
@@ -37,8 +39,8 @@ export const AiStudioModal: React.FC<AiStudioModalProps> = ({
       });
       setGeneratedText(res.text);
       setGeneratedTags(res.tags);
-    } catch {
-      // error
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'Could not generate a draft. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -165,6 +167,12 @@ export const AiStudioModal: React.FC<AiStudioModalProps> = ({
               </button>
             </div>
           </div>
+
+          {error && (
+            <div role="alert" style={{ padding: '0.75rem', borderRadius: 'var(--radius-sm)', background: 'rgba(239, 68, 68, 0.12)', color: '#f87171' }}>
+              {error}
+            </div>
+          )}
 
           {/* Generated Result Preview Box */}
           {generatedText ? (

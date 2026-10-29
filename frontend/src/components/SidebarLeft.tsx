@@ -1,6 +1,7 @@
 import React from 'react';
 import { Home, Compass, Bell, MessageSquare, User as UserIcon, Sparkles, PlusCircle, LogOut, Sun, Moon } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { Avatar } from './Avatar';
 
 interface SidebarLeftProps {
   currentTab: string;
@@ -233,6 +234,17 @@ export const SidebarLeft: React.FC<SidebarLeftProps> = ({
           <span className="nav-label">{isDark ? 'Light Theme' : 'Dark Theme'}</span>
         </button>
 
+        {user && (
+          <button
+            onClick={() => { void logout(); }}
+            className="mobile-logout-btn"
+            aria-label="Log out"
+            title="Log out"
+          >
+            <LogOut size={18} />
+          </button>
+        )}
+
         {user ? (
           <div
             className="user-bottom-badge"
@@ -250,13 +262,7 @@ export const SidebarLeft: React.FC<SidebarLeftProps> = ({
               onClick={() => openProfile(user.username)}
               style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', cursor: 'pointer', overflow: 'hidden' }}
             >
-              <div className="avatar-wrap avatar-sm">
-                {user.avatar_url ? (
-                  <img src={user.avatar_url} alt="" className="avatar-img" />
-                ) : (
-                  user.initials
-                )}
-              </div>
+              <Avatar user={user} size="sm" />
               <div className="user-details" style={{ overflow: 'hidden' }}>
                 <div style={{ fontWeight: 700, fontSize: '0.88rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {user.display_name}

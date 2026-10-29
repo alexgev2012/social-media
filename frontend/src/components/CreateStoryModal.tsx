@@ -1,6 +1,8 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { X, Image, Video, Sparkles } from 'lucide-react';
 import { api } from '../services/api';
+import { MediaImage, MediaVideo } from './MediaAsset';
+import { validateMediaUpload } from '../services/uploadValidation.mjs';
 
 interface CreateStoryModalProps {
   onClose: () => void;
@@ -20,19 +22,22 @@ export const CreateStoryModal: React.FC<CreateStoryModalProps> = ({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => () => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+  }, [previewUrl]);
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.type.startsWith('image/')) {
-      setMediaType('image');
-    } else if (file.type.startsWith('video/')) {
-      setMediaType('video');
-    } else {
-      setError('Please upload an image or video file.');
+    const selection = validateMediaUpload(file);
+    if (selection.error || !selection.kind) {
+      setError(selection.error || 'Choose a supported image or video.');
+      e.currentTarget.value = '';
       return;
     }
 
+    setMediaType(selection.kind);
     setMediaFile(file);
     setPreviewUrl(URL.createObjectURL(file));
     setError(null);
@@ -126,9 +131,9 @@ export const CreateStoryModal: React.FC<CreateStoryModalProps> = ({
           >
             {previewUrl ? (
               mediaType === 'image' ? (
-                <img src={previewUrl} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                <MediaImage src={previewUrl} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               ) : (
-                <video src={previewUrl} controls style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                <MediaVideo src={previewUrl} controls style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               )
             ) : (
               <div style={{ textAlign: 'center', padding: '1rem', color: 'var(--text-muted)' }}>
@@ -148,7 +153,7 @@ export const CreateStoryModal: React.FC<CreateStoryModalProps> = ({
             type="file"
             ref={fileInputRef}
             onChange={handleFileChange}
-            accept="image/*,video/*"
+            accept="image/jpeg,image/png,image/gif,image/webp,video/mp4,video/quicktime,video/webm,video/ogg,video/x-matroska,video/x-msvideo"
             style={{ display: 'none' }}
           />
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { SidebarLeft } from './components/SidebarLeft';
 import { SidebarRight } from './components/SidebarRight';
@@ -24,12 +24,17 @@ const MainApp: React.FC = () => {
   const [feedType, setFeedType] = useState<'global' | 'following'>('global');
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [selectedProfileUsername, setSelectedProfileUsername] = useState<string | null>(null);
+  const [profileRefreshKey, setProfileRefreshKey] = useState(0);
   const [chatPartnerUsername, setChatPartnerUsername] = useState<string | null>(null);
 
   // Posts & Stories State
   const [posts, setPosts] = useState<Post[]>([]);
   const [storyGroups, setStoryGroups] = useState<StoryGroup[]>([]);
   const [isLoadingPosts, setIsLoadingPosts] = useState(true);
+  const [feedError, setFeedError] = useState<string | null>(null);
+  const [storiesError, setStoriesError] = useState<string | null>(null);
+  const postsRequestId = useRef(0);
+  const storiesRequestId = useRef(0);
 
   // Modals
   const [isStoryViewerOpen, setIsStoryViewerOpen] = useState(false);
@@ -56,26 +61,34 @@ const MainApp: React.FC = () => {
   const toggleTheme = () => setIsDark(!isDark);
 
   const loadStories = async () => {
+    const requestId = ++storiesRequestId.current;
+    setStoriesError(null);
     try {
       const data = await api.stories.list();
-      setStoryGroups(data);
-    } catch {
-      // ignore
+      if (requestId === storiesRequestId.current) setStoryGroups(data);
+    } catch (error) {
+      if (requestId === storiesRequestId.current) {
+        setStoriesError(error instanceof Error ? error.message : 'Could not load stories.');
+      }
     }
   };
 
   const loadPosts = async () => {
+    const requestId = ++postsRequestId.current;
     setIsLoadingPosts(true);
+    setFeedError(null);
     try {
       const data = await api.posts.list({
         feed: feedType,
         tag: activeTag || undefined,
       });
-      setPosts(data);
-    } catch {
-      // ignore
+      if (requestId === postsRequestId.current) setPosts(data);
+    } catch (error) {
+      if (requestId === postsRequestId.current) {
+        setFeedError(error instanceof Error ? error.message : 'Could not load the feed.');
+      }
     } finally {
-      setIsLoadingPosts(false);
+      if (requestId === postsRequestId.current) setIsLoadingPosts(false);
     }
   };
 
@@ -232,6 +245,12 @@ const MainApp: React.FC = () => {
               onOpenStory={handleOpenStory}
               onOpenCreateStory={() => setIsCreateStoryOpen(true)}
             />
+            {storiesError && (
+              <div role="alert" style={{ padding: '0.7rem 1.25rem', color: '#f87171', fontSize: '0.85rem' }}>
+                Stories couldn’t load. {storiesError}{' '}
+                <button className="btn-ghost" onClick={loadStories} style={{ color: 'var(--text-primary)' }}>Retry</button>
+              </div>
+            )}
 
             {/* Active Tag Filter Banner */}
             {activeTag && (
@@ -270,6 +289,11 @@ const MainApp: React.FC = () => {
                 <div style={{ textAlign: 'center', padding: '3.5rem', color: 'var(--text-muted)' }}>
                   Loading feed...
                 </div>
+              ) : feedError ? (
+                <div role="alert" style={{ textAlign: 'center', padding: '3.5rem 1.5rem', color: '#f87171' }}>
+                  <p>Could not load the feed. {feedError}</p>
+                  <button className="btn-secondary" onClick={loadPosts} style={{ marginTop: '0.8rem' }}>Retry</button>
+                </div>
               ) : posts.length > 0 ? (
                 posts.map((post) => (
                   <PostCard
@@ -301,6 +325,7 @@ const MainApp: React.FC = () => {
               onSelectTag={handleSelectTag}
               onSelectUser={handleSelectUser}
               onOpenAiStudio={() => setIsAiStudioOpen(true)}
+              embedded
             />
           </div>
         )}
@@ -324,6 +349,7 @@ const MainApp: React.FC = () => {
         {currentTab === 'profile' && selectedProfileUsername && (
           <ProfileView
             username={selectedProfileUsername}
+            refreshKey={profileRefreshKey}
             onBack={() => setCurrentTab('feed')}
             onSelectTag={handleSelectTag}
             onSelectUser={handleSelectUser}
@@ -335,7 +361,7 @@ const MainApp: React.FC = () => {
       </main>
 
       {/* Right Sidebar */}
-      {currentTab !== 'messages' && (
+      {currentTab !== 'messages' && currentTab !== 'explore' && (
         <SidebarRight
           onSelectTag={handleSelectTag}
           onSelectUser={handleSelectUser}
@@ -385,9 +411,7 @@ const MainApp: React.FC = () => {
         <EditProfileModal
           onClose={() => setIsEditProfileOpen(false)}
           onProfileUpdated={() => {
-            if (selectedProfileUsername) {
-              setSelectedProfileUsername(selectedProfileUsername);
-            }
+            setProfileRefreshKey((key) => key + 1);
           }}
         />
       )}

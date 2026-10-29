@@ -29,6 +29,7 @@ urlpatterns = [
     path("images/<str:kind>/<int:pk>/", views.image, name="image"),
 
     # REST API for React Frontend
+    path("api/auth/csrf/", api_views.api_csrf, name="api_csrf"),
     path("api/auth/register/", api_views.api_register, name="api_register"),
     path("api/auth/login/", api_views.api_login, name="api_login"),
     path("api/auth/logout/", api_views.api_logout, name="api_logout"),
@@ -51,10 +52,10 @@ urlpatterns = [
     path("api/conversations/<str:username>/messages/", api_views.api_send_message, name="api_send_message"),
     path("api/messages/unread-count/", api_views.api_unread_messages_count, name="api_unread_messages_count"),
 
-    path("api/users/<str:username>/", api_views.api_user_profile, name="api_user_profile"),
-    path("api/users/<str:username>/follow/", api_views.api_toggle_follow, name="api_toggle_follow"),
     path("api/users/search/", api_views.api_users_search, name="api_users_search"),
     path("api/users/suggestions/", api_views.api_suggested_users, name="api_suggested_users"),
+    path("api/users/<str:username>/", api_views.api_user_profile, name="api_user_profile"),
+    path("api/users/<str:username>/follow/", api_views.api_toggle_follow, name="api_toggle_follow"),
 
     path("api/notifications/", api_views.api_notifications_list, name="api_notifications_list"),
     path("api/notifications/read/", api_views.api_notifications_mark_read, name="api_notifications_mark_read"),

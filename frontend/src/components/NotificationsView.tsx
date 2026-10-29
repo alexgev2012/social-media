@@ -3,6 +3,7 @@ import { Bell, Heart, MessageCircle, UserPlus, CheckCheck } from 'lucide-react';
 import { NotificationItem } from '../types';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { Avatar } from './Avatar';
 
 interface NotificationsViewProps {
   onSelectUser: (username: string) => void;
@@ -17,14 +18,16 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const loadNotifications = async () => {
     setIsLoading(true);
+    setError(null);
     try {
       const data = await api.notifications.list();
       setNotifications(data);
-    } catch {
-      // error
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'Could not load notifications.');
     } finally {
       setIsLoading(false);
     }
@@ -39,8 +42,8 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
       await api.notifications.markRead();
       setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
       refreshBadges();
-    } catch {
-      // error
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'Could not mark notifications as read.');
     }
   };
 
@@ -50,8 +53,8 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
         await api.notifications.markRead(notif.id);
         setNotifications(prev => prev.map(n => (n.id === notif.id ? { ...n, is_read: true } : n)));
         refreshBadges();
-      } catch {
-        // error
+      } catch (requestError) {
+        setError(requestError instanceof Error ? requestError.message : 'Could not mark this notification as read.');
       }
     }
 
@@ -123,6 +126,13 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
           <CheckCheck size={16} /> Mark all read
         </button>
       </div>
+
+      {error && (
+        <div role="alert" style={{ marginBottom: '0.85rem', padding: '0.75rem', borderRadius: 'var(--radius-sm)', background: 'rgba(239, 68, 68, 0.12)', color: '#f87171' }}>
+          {error}{' '}
+          <button className="btn-ghost" onClick={loadNotifications}>Retry</button>
+        </div>
+      )}
 
       {/* Tabs */}
       <div
@@ -202,13 +212,7 @@ export const NotificationsView: React.FC<NotificationsViewProps> = ({
               </div>
 
               {/* Actor avatar */}
-              <div className="avatar-wrap avatar-sm">
-                {notif.actor.avatar_url ? (
-                  <img src={notif.actor.avatar_url} alt="" className="avatar-img" />
-                ) : (
-                  notif.actor.initials
-                )}
-              </div>
+              <Avatar user={notif.actor} size="sm" />
 
               {/* Notification text */}
               <div style={{ flex: 1 }}>

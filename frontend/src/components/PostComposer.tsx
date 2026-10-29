@@ -3,6 +3,9 @@ import { Image, Sparkles, X, Send } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { Post } from '../types';
+import { Avatar } from './Avatar';
+import { MediaImage, MediaVideo } from './MediaAsset';
+import { validateMediaUpload } from '../services/uploadValidation.mjs';
 
 interface PostComposerProps {
   onPostCreated: (post: Post) => void;
@@ -25,6 +28,10 @@ export const PostComposer: React.FC<PostComposerProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  React.useEffect(() => () => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+  }, [previewUrl]);
+
   React.useEffect(() => {
     if (defaultContent) {
       setContent(defaultContent);
@@ -38,15 +45,14 @@ export const PostComposer: React.FC<PostComposerProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.type.startsWith('image/')) {
-      setMediaType('image');
-    } else if (file.type.startsWith('video/')) {
-      setMediaType('video');
-    } else {
-      setError('Please choose an image or video file.');
+    const selection = validateMediaUpload(file);
+    if (selection.error || !selection.kind) {
+      setError(selection.error || 'Choose a supported image or video.');
+      e.currentTarget.value = '';
       return;
     }
 
+    setMediaType(selection.kind);
     setMediaFile(file);
     setPreviewUrl(URL.createObjectURL(file));
     setError(null);
@@ -56,6 +62,7 @@ export const PostComposer: React.FC<PostComposerProps> = ({
     setMediaFile(null);
     setPreviewUrl(null);
     setMediaType(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const insertTag = (tag: string) => {
@@ -113,15 +120,7 @@ export const PostComposer: React.FC<PostComposerProps> = ({
     >
       {/* Left Column: Author Avatar */}
       <div style={{ flexShrink: 0 }}>
-        <div className="avatar-wrap avatar-md">
-          {user?.avatar_url ? (
-            <img src={user.avatar_url} alt="" className="avatar-img" />
-          ) : user ? (
-            user.initials
-          ) : (
-            '?'
-          )}
-        </div>
+        {user ? <Avatar user={user} size="md" /> : <div className="avatar-wrap avatar-md">?</div>}
       </div>
 
       {/* Right Column: Input & Actions */}
@@ -162,13 +161,13 @@ export const PostComposer: React.FC<PostComposerProps> = ({
               }}
             >
               {mediaType === 'image' ? (
-                <img
+                <MediaImage
                   src={previewUrl}
                   alt="Attachment"
                   style={{ width: '100%', maxHeight: '280px', objectFit: 'cover', display: 'block' }}
                 />
               ) : (
-                <video
+                <MediaVideo
                   src={previewUrl}
                   controls
                   style={{ width: '100%', maxHeight: '280px', display: 'block' }}
@@ -272,7 +271,7 @@ export const PostComposer: React.FC<PostComposerProps> = ({
                 type="file"
                 ref={fileInputRef}
                 onChange={handleFileChange}
-                accept="image/*,video/*"
+                accept="image/jpeg,image/png,image/gif,image/webp,video/mp4,video/quicktime,video/webm,video/ogg,video/x-matroska,video/x-msvideo"
                 style={{ display: 'none' }}
               />
             </div>

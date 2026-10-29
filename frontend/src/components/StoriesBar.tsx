@@ -2,6 +2,7 @@ import React from 'react';
 import { Plus } from 'lucide-react';
 import { StoryGroup } from '../types';
 import { useAuth } from '../context/AuthContext';
+import { Avatar } from './Avatar';
 
 interface StoriesBarProps {
   storyGroups: StoryGroup[];
@@ -50,21 +51,15 @@ export const StoriesBar: React.FC<StoriesBarProps> = ({
         }}
       >
         <div style={{ position: 'relative' }}>
-          <div
-            className="avatar-wrap avatar-lg"
-            style={{
-              background: user?.avatar_url ? 'transparent' : 'rgba(99, 102, 241, 0.12)',
-              border: '2px dashed rgba(99, 102, 241, 0.5)',
-            }}
-          >
-            {user?.avatar_url ? (
-              <img src={user.avatar_url} alt="" className="avatar-img" />
-            ) : user ? (
-              user.initials
-            ) : (
-              '+'
-            )}
-          </div>
+          {user ? (
+            <Avatar
+              user={user}
+              size="lg"
+              style={{ border: '2px dashed rgba(99, 102, 241, 0.5)' }}
+            />
+          ) : (
+            <div className="avatar-wrap avatar-lg" style={{ background: 'rgba(99, 102, 241, 0.12)', border: '2px dashed rgba(99, 102, 241, 0.5)' }}>+</div>
+          )}
           <div
             style={{
               position: 'absolute',
@@ -113,18 +108,7 @@ export const StoriesBar: React.FC<StoriesBarProps> = ({
               transition: 'var(--transition)',
             }}
           >
-            <div
-              className="avatar-wrap avatar-lg"
-              style={{
-                border: '2px solid var(--bg-main)',
-              }}
-            >
-              {group.user.avatar_url ? (
-                <img src={group.user.avatar_url} alt="" className="avatar-img" />
-              ) : (
-                group.user.initials
-              )}
-            </div>
+            <Avatar user={group.user} size="lg" style={{ border: '2px solid var(--bg-main)' }} />
           </div>
           <span
             style={{

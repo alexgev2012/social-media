@@ -4,9 +4,11 @@ import { User, Post } from '../types';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { PostCard } from './PostCard';
+import { Avatar } from './Avatar';
 
 interface ProfileViewProps {
   username: string;
+  refreshKey: number;
   onBack: () => void;
   onSelectTag: (tag: string) => void;
   onSelectUser: (username: string) => void;
@@ -17,6 +19,7 @@ interface ProfileViewProps {
 
 export const ProfileView: React.FC<ProfileViewProps> = ({
   username,
+  refreshKey,
   onBack,
   onSelectTag,
   onSelectUser,
@@ -29,11 +32,13 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [posts, setPosts] = useState<Post[]>([]);
   const [activeTab, setActiveTab] = useState<'posts' | 'media'>('posts');
   const [isLoading, setIsLoading] = useState(true);
+  const [profileError, setProfileError] = useState<string | null>(null);
   const [isFollowing, setIsFollowing] = useState(false);
   const [followersCount, setFollowersCount] = useState(0);
 
   const loadProfile = async () => {
     setIsLoading(true);
+    setProfileError(null);
     try {
       const [u, p] = await Promise.all([
         api.users.getProfile(username),
@@ -43,8 +48,10 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       setPosts(p);
       setIsFollowing(!!u.is_following);
       setFollowersCount(u.followers_count || 0);
-    } catch {
-      // error
+    } catch (error) {
+      setProfileUser(null);
+      setPosts([]);
+      setProfileError(error instanceof Error ? error.message : 'Could not load this profile.');
     } finally {
       setIsLoading(false);
     }
@@ -52,7 +59,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
   useEffect(() => {
     loadProfile();
-  }, [username]);
+  }, [username, refreshKey]);
 
   const handleToggleFollow = async () => {
     if (!user) {
@@ -63,8 +70,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       const res = await api.users.toggleFollow(username);
       setIsFollowing(res.is_following);
       setFollowersCount(res.followers_count);
-    } catch {
-      // error
+    } catch (error) {
+      setProfileError(error instanceof Error ? error.message : 'Could not update follow status.');
     }
   };
 
@@ -108,6 +115,10 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         </div>
       </div>
 
+      {profileError && profileUser && (
+        <div role="alert" style={{ padding: '0.75rem 1.25rem', color: '#f87171' }}>{profileError}</div>
+      )}
+
       {isLoading ? (
         <div style={{ textAlign: 'center', padding: '3.5rem', color: 'var(--text-muted)' }}>
           Loading profile...
@@ -124,7 +135,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           />
 
           {/* Profile Header Details */}
-          <div style={{ padding: '0 1.25rem 1.25rem', position: 'relative' }}>
+          <div className="profile-header-details" style={{ padding: '0 1.25rem 1.25rem', position: 'relative' }}>
             {/* Avatar & Action Button Row */}
             <div
               style={{
@@ -135,22 +146,14 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 marginBottom: '0.85rem',
               }}
             >
-              <div
-                className="avatar-wrap avatar-xl"
-                style={{
-                  border: '4px solid var(--bg-main)',
-                  boxShadow: 'var(--shadow-md)',
-                }}
-              >
-                {profileUser.avatar_url ? (
-                  <img src={profileUser.avatar_url} alt="" className="avatar-img" />
-                ) : (
-                  profileUser.initials
-                )}
-              </div>
+              <Avatar
+                user={profileUser}
+                size="xl"
+                style={{ border: '4px solid var(--bg-main)', boxShadow: 'var(--shadow-md)' }}
+              />
 
               {/* Action Buttons */}
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <div className="profile-header-actions" style={{ display: 'flex', gap: '0.5rem' }}>
                 {isOwnProfile ? (
                   <button onClick={onOpenEditProfile} className="btn-secondary" style={{ fontSize: '0.85rem' }}>
                     <Edit size={14} /> Edit Profile
@@ -283,7 +286,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         </>
       ) : (
         <div style={{ textAlign: 'center', padding: '3.5rem', color: '#f87171' }}>
-          User not found.
+          {profileError || 'User not found.'}{' '}
+          <button className="btn-ghost" onClick={loadProfile}>Retry</button>
         </div>
       )}
     </div>

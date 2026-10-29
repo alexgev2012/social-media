@@ -1,28 +1,62 @@
 import json
+import logging
 import os
 import re
 from datetime import timedelta
 from io import BytesIO
+from pathlib import PurePosixPath
+
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 from django.contrib.auth import authenticate, login, logout
+from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.core.files.base import ContentFile
+from django.core.validators import validate_email
 from django.db import models
+from django.db import IntegrityError, transaction
 from django.db.models import Count, Exists, OuterRef, Q
+from django.db.models.functions import Lower
+from django.http import JsonResponse
+from django.middleware.csrf import get_token
 from django.utils import timezone
+from django.views.decorators.csrf import ensure_csrf_cookie
 from rest_framework import status
+from rest_framework.authentication import SessionAuthentication
 from rest_framework.decorators import api_view, authentication_classes, permission_classes, parser_classes
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 
-from .api_auth import CsrfExemptSessionAuthentication
 from .models import (
     User, Post, Comment, PostLike, Follow, CommentLike,
     Story, StoryLike, Conversation, Message, Notification
 )
+
+logger = logging.getLogger(__name__)
+
+
+class MediaStorageError(Exception):
+    pass
+
+
+def csrf_failure(request, reason=""):
+    if request.path.startswith("/api/"):
+        logger.warning("Rejected API request after CSRF validation failed (method=%s).", request.method)
+        return JsonResponse(
+            {"error": "Request verification failed. Refresh the page and try again."},
+            status=403,
+        )
+    from django.views.csrf import csrf_failure as default_csrf_failure
+    return default_csrf_failure(request, reason=reason)
+
+
+def enforce_api_csrf(request):
+    # DRF's SessionAuthentication checks CSRF only for authenticated sessions.
+    # Explicitly protect anonymous account creation and login as well.
+    SessionAuthentication().enforce_csrf(request)
 from .serializers import (
-    UserBasicSerializer, UserProfileSerializer,
+    UserBasicSerializer, UserProfileSerializer, PublicUserProfileSerializer,
     PostSerializer, CommentSerializer,
     StorySerializer, MessageSerializer, ConversationSerializer,
     NotificationSerializer, extract_hashtags_list
@@ -35,38 +69,131 @@ def process_image_upload(upload):
     if getattr(upload, "size", 0) > 5 * 1024 * 1024:
         raise ValueError("Image must be 5 MB or smaller.")
     upload.seek(0)
-    with Image.open(upload) as original:
-        if original.width * original.height > 20_000_000:
-            raise ValueError("Image must be at most 20 megapixels.")
-        if original.format not in {"JPEG", "PNG", "GIF", "WEBP"}:
-            raise ValueError("Use a JPG, PNG, GIF or WebP image.")
-        img = ImageOps.exif_transpose(original).convert("RGB")
-        img.thumbnail((2400, 2400))
-        output = BytesIO()
-        img.save(output, format="JPEG", quality=88)
-        return ContentFile(output.getvalue(), name="image.jpg")
+    try:
+        with Image.open(upload) as original:
+            if original.width * original.height > 20_000_000:
+                raise ValueError("Image must be at most 20 megapixels.")
+            if original.format not in {"JPEG", "PNG", "GIF", "WEBP"}:
+                raise ValueError("Use a JPG, PNG, GIF or WebP image.")
+            img = ImageOps.exif_transpose(original).convert("RGB")
+            img.thumbnail((2400, 2400))
+            output = BytesIO()
+            img.save(output, format="JPEG", quality=88)
+            upload.seek(0)
+            return ContentFile(output.getvalue(), name="image.jpg")
+    except ValueError:
+        raise
+    except (OSError, UnidentifiedImageError, Image.DecompressionBombError, Image.DecompressionBombWarning):
+        raise ValueError("Please upload a valid image file.") from None
+
+
+ALLOWED_VIDEO_EXTENSIONS = {"avi", "m4v", "mkv", "mov", "mp4", "ogg", "ogv", "webm"}
+
+
+def validate_video_upload(upload):
+    if not upload or not getattr(upload, "size", 0):
+        raise ValueError("Please upload a non-empty video file.")
+    if upload.size > settings.MAX_VIDEO_UPLOAD_SIZE:
+        limit_mb = max(1, settings.MAX_VIDEO_UPLOAD_SIZE // (1024 * 1024))
+        raise ValueError(f"Video must be {limit_mb} MB or smaller.")
+    extension = PurePosixPath(upload.name or "").suffix.lower().lstrip(".")
+    if extension not in ALLOWED_VIDEO_EXTENSIONS:
+        raise ValueError("Use an MP4, MOV, WebM, Ogg, MKV or AVI video.")
+    upload.seek(0)
+    header = upload.read(16)
+    upload.seek(0)
+    valid_signature = (
+        (extension in {"mp4", "m4v", "mov"} and len(header) >= 8 and header[4:8] == b"ftyp")
+        or (extension in {"webm", "mkv"} and header.startswith(b"\x1aE\xdf\xa3"))
+        or (extension in {"ogg", "ogv"} and header.startswith(b"OggS"))
+        or (extension == "avi" and header.startswith(b"RIFF") and header[8:12] == b"AVI ")
+    )
+    if not valid_signature:
+        raise ValueError("The selected file does not appear to be a supported video.")
+
+
+def media_storage_available():
+    return settings.DEBUG or settings.MEDIA_STORAGE_CONFIGURED
+
+
+def persist_uploads(instance, uploaded_files):
+    """Write validated uploads to storage before the database record references them."""
+    stored = []
+    try:
+        for field_name, uploaded in uploaded_files.items():
+            if uploaded is None:
+                continue
+            field = instance._meta.get_field(field_name)
+            target_storage = field.storage
+            object_name = field.generate_filename(instance, uploaded.name)
+            stored_name = target_storage.save(object_name, uploaded)
+            stored.append((field_name, target_storage, stored_name))
+            setattr(instance, field_name, stored_name)
+    except Exception as exc:
+        for _, target_storage, stored_name in stored:
+            try:
+                target_storage.delete(stored_name)
+            except Exception:
+                logger.warning("Failed to clean up a partially stored media upload.")
+        logger.error("Media storage failed (error_type=%s).", type(exc).__name__)
+        raise MediaStorageError from None
+    try:
+        with transaction.atomic():
+            instance.save()
+    except Exception:
+        for _, target_storage, stored_name in stored:
+            try:
+                target_storage.delete(stored_name)
+            except Exception:
+                logger.warning("Failed to clean up media after a database save failure.")
+        raise
+    return stored
 
 
 # ==========================================
 # AUTH ENDPOINTS
 # ==========================================
 
+@ensure_csrf_cookie
+@api_view(["GET"])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AllowAny])
+def api_csrf(request):
+    return Response({"csrfToken": get_token(request)})
+
+
 @api_view(["POST"])
-@authentication_classes([CsrfExemptSessionAuthentication])
+@authentication_classes([SessionAuthentication])
 @permission_classes([AllowAny])
 def api_register(request):
+    enforce_api_csrf(request)
     data = request.data
-    username = (data.get("username") or "").strip()
-    email = (data.get("email") or "").strip().lower()
+    username_value = data.get("username") or ""
+    email_value = data.get("email") or ""
     password = data.get("password") or ""
-    first_name = (data.get("first_name") or "").strip()
-    last_name = (data.get("last_name") or "").strip()
+    first_name_value = data.get("first_name") or ""
+    last_name_value = data.get("last_name") or ""
+    if not all(isinstance(value, str) for value in (username_value, email_value, password, first_name_value, last_name_value)):
+        return Response({"error": "Registration fields must be text."}, status=status.HTTP_400_BAD_REQUEST)
+    username = username_value.strip()
+    email = email_value.strip().lower()
+    first_name = first_name_value.strip()
+    last_name = last_name_value.strip()
 
     if not username or not email or not password:
         return Response({"error": "Username, email, and password are required."}, status=status.HTTP_400_BAD_REQUEST)
-
-    if len(password) < 6:
-        return Response({"error": "Password must be at least 6 characters."}, status=status.HTTP_400_BAD_REQUEST)
+    if len(username) > User._meta.get_field("username").max_length:
+        return Response({"error": "Username is too long."}, status=status.HTTP_400_BAD_REQUEST)
+    if len(email) > User._meta.get_field("email").max_length:
+        return Response({"error": "Email address is too long."}, status=status.HTTP_400_BAD_REQUEST)
+    if len(first_name) > User._meta.get_field("first_name").max_length or len(last_name) > User._meta.get_field("last_name").max_length:
+        return Response({"error": "First and last names must be 150 characters or fewer."}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        for validator in User._meta.get_field("username").validators:
+            validator(username)
+        validate_email(email)
+    except ValidationError as exc:
+        return Response({"error": exc.messages[0]}, status=status.HTTP_400_BAD_REQUEST)
 
     if User.objects.filter(username__iexact=username).exists():
         return Response({"error": "This username is already taken."}, status=status.HTTP_400_BAD_REQUEST)
@@ -74,24 +201,42 @@ def api_register(request):
     if User.objects.filter(email__iexact=email).exists():
         return Response({"error": "This email is already registered."}, status=status.HTTP_400_BAD_REQUEST)
 
-    user = User.objects.create_user(
-        username=username,
-        email=email,
-        password=password,
-        first_name=first_name,
-        last_name=last_name
-    )
+    user = User(username=username, email=email, first_name=first_name, last_name=last_name)
+    try:
+        from django.contrib.auth.password_validation import validate_password
+        validate_password(password, user=user)
+    except ValidationError as exc:
+        return Response({"error": " ".join(exc.messages)}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        with transaction.atomic():
+            user = User.objects.create_user(
+                username=username,
+                email=email,
+                password=password,
+                first_name=first_name,
+                last_name=last_name,
+            )
+    except IntegrityError:
+        return Response({"error": "That username or email is already registered."}, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as exc:
+        logger.error("Registration failed unexpectedly (error_type=%s).", type(exc).__name__)
+        return Response({"error": "Registration could not be completed. Please try again."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     login(request, user)
     return Response(UserProfileSerializer(user, context={"request": request}).data, status=status.HTTP_201_CREATED)
 
 
 @api_view(["POST"])
-@authentication_classes([CsrfExemptSessionAuthentication])
+@authentication_classes([SessionAuthentication])
 @permission_classes([AllowAny])
 def api_login(request):
+    enforce_api_csrf(request)
     data = request.data
-    username = (data.get("username") or "").strip()
+    username_value = data.get("username") or ""
     password = data.get("password") or ""
+    if not isinstance(username_value, str) or not isinstance(password, str):
+        return Response({"error": "Username and password must be text."}, status=status.HTTP_400_BAD_REQUEST)
+    username = username_value.strip()
 
     user = authenticate(request, username=username, password=password)
     if not user:
@@ -109,14 +254,14 @@ def api_login(request):
 
 
 @api_view(["POST"])
-@authentication_classes([CsrfExemptSessionAuthentication])
+@authentication_classes([SessionAuthentication])
 def api_logout(request):
     logout(request)
     return Response({"message": "Successfully logged out."})
 
 
 @api_view(["GET"])
-@authentication_classes([CsrfExemptSessionAuthentication])
+@authentication_classes([SessionAuthentication])
 @permission_classes([AllowAny])
 def api_me(request):
     if request.user.is_authenticated:
@@ -128,13 +273,18 @@ def api_me(request):
 
 
 @api_view(["PATCH", "PUT"])
-@authentication_classes([CsrfExemptSessionAuthentication])
+@authentication_classes([SessionAuthentication])
 @permission_classes([IsAuthenticated])
 @parser_classes([MultiPartParser, FormParser, JSONParser])
 def api_update_profile(request):
     user = request.user
     data = request.data
 
+    for field_name in ("first_name", "last_name", "bio"):
+        if field_name in data and not isinstance(data[field_name], str):
+            return Response({"error": f"{field_name.replace('_', ' ').capitalize()} must be text."}, status=status.HTTP_400_BAD_REQUEST)
+    if len(data.get("bio", user.bio)) > 500:
+        return Response({"error": "Bio must be 500 characters or fewer."}, status=status.HTTP_400_BAD_REQUEST)
     if "first_name" in data:
         user.first_name = data["first_name"].strip()
     if "last_name" in data:
@@ -143,13 +293,18 @@ def api_update_profile(request):
         user.bio = data["bio"].strip()
 
     if "avatar" in request.FILES:
+        if not media_storage_available():
+            return Response({"error": "Media storage is not configured on this server."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         try:
             processed = process_image_upload(request.FILES["avatar"])
-            user.avatar = processed
         except ValueError as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
-    user.save()
+        try:
+            persist_uploads(user, {"avatar": processed})
+        except MediaStorageError:
+            return Response({"error": "Could not store the avatar. Please try again."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+    else:
+        user.save()
     return Response(UserProfileSerializer(user, context={"request": request}).data)
 
 
@@ -158,7 +313,7 @@ def api_update_profile(request):
 # ==========================================
 
 @api_view(["GET", "POST"])
-@authentication_classes([CsrfExemptSessionAuthentication])
+@authentication_classes([SessionAuthentication])
 @permission_classes([AllowAny])
 @parser_classes([MultiPartParser, FormParser, JSONParser])
 def api_posts_list_create(request):
@@ -172,6 +327,10 @@ def api_posts_list_create(request):
 
         if not content and not image_file and not video_file:
             return Response({"error": "Write something or attach media."}, status=status.HTTP_400_BAD_REQUEST)
+        if len(content) > 1000:
+            return Response({"error": "Posts must be 1,000 characters or fewer."}, status=status.HTTP_400_BAD_REQUEST)
+        if (image_file or video_file) and not media_storage_available():
+            return Response({"error": "Media storage is not configured on this server."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
         processed_img = None
         if image_file:
@@ -179,13 +338,20 @@ def api_posts_list_create(request):
                 processed_img = process_image_upload(image_file)
             except ValueError as e:
                 return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        if video_file:
+            try:
+                validate_video_upload(video_file)
+            except ValueError as e:
+                return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-        post = Post.objects.create(
-            author=request.user,
-            content=content,
-            image=processed_img or "",
-            video=video_file or ""
-        )
+        post = Post(author=request.user, content=content)
+        try:
+            if processed_img or video_file:
+                persist_uploads(post, {"image": processed_img, "video": video_file})
+            else:
+                post.save()
+        except MediaStorageError:
+            return Response({"error": "Could not store the post media. Please try again."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         return Response(PostSerializer(post, context={"request": request}).data, status=status.HTTP_201_CREATED)
 
     # GET Feed
@@ -230,7 +396,7 @@ def api_posts_list_create(request):
 
 
 @api_view(["GET", "PATCH", "DELETE"])
-@authentication_classes([CsrfExemptSessionAuthentication])
+@authentication_classes([SessionAuthentication])
 @permission_classes([AllowAny])
 def api_post_detail(request, pk):
     try:
@@ -262,7 +428,7 @@ def api_post_detail(request, pk):
 
 
 @api_view(["POST"])
-@authentication_classes([CsrfExemptSessionAuthentication])
+@authentication_classes([SessionAuthentication])
 @permission_classes([IsAuthenticated])
 def api_post_like(request, pk):
     try:
@@ -301,7 +467,7 @@ def api_post_like(request, pk):
 # ==========================================
 
 @api_view(["GET", "POST"])
-@authentication_classes([CsrfExemptSessionAuthentication])
+@authentication_classes([SessionAuthentication])
 @permission_classes([AllowAny])
 def api_post_comments(request, post_pk):
     try:
@@ -359,7 +525,7 @@ def api_post_comments(request, post_pk):
 
 
 @api_view(["POST"])
-@authentication_classes([CsrfExemptSessionAuthentication])
+@authentication_classes([SessionAuthentication])
 @permission_classes([IsAuthenticated])
 def api_comment_like(request, pk):
     try:
@@ -395,7 +561,7 @@ def api_comment_like(request, pk):
 
 
 @api_view(["DELETE"])
-@authentication_classes([CsrfExemptSessionAuthentication])
+@authentication_classes([SessionAuthentication])
 @permission_classes([IsAuthenticated])
 def api_comment_delete(request, pk):
     try:
@@ -415,7 +581,7 @@ def api_comment_delete(request, pk):
 # ==========================================
 
 @api_view(["GET", "POST"])
-@authentication_classes([CsrfExemptSessionAuthentication])
+@authentication_classes([SessionAuthentication])
 @permission_classes([AllowAny])
 @parser_classes([MultiPartParser, FormParser, JSONParser])
 def api_stories_list_create(request):
@@ -429,6 +595,10 @@ def api_stories_list_create(request):
 
         if not image_file and not video_file:
             return Response({"error": "Please provide an image or video for the story."}, status=status.HTTP_400_BAD_REQUEST)
+        if len(caption) > 280:
+            return Response({"error": "Story captions must be 280 characters or fewer."}, status=status.HTTP_400_BAD_REQUEST)
+        if not media_storage_available():
+            return Response({"error": "Media storage is not configured on this server."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
         processed_img = None
         if image_file:
@@ -436,13 +606,20 @@ def api_stories_list_create(request):
                 processed_img = process_image_upload(image_file)
             except ValueError as e:
                 return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        if video_file:
+            try:
+                validate_video_upload(video_file)
+            except ValueError as e:
+                return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-        story = Story.objects.create(
-            author=request.user,
-            image=processed_img or "",
-            video=video_file or "",
-            caption=caption
-        )
+        story = Story(author=request.user, caption=caption)
+        try:
+            if processed_img or video_file:
+                persist_uploads(story, {"image": processed_img, "video": video_file})
+            else:
+                story.save()
+        except MediaStorageError:
+            return Response({"error": "Could not store the story media. Please try again."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         return Response(StorySerializer(story, context={"request": request}).data, status=status.HTTP_201_CREATED)
 
     # GET active stories (past 24h)
@@ -468,7 +645,7 @@ def api_stories_list_create(request):
 
 
 @api_view(["POST"])
-@authentication_classes([CsrfExemptSessionAuthentication])
+@authentication_classes([SessionAuthentication])
 @permission_classes([IsAuthenticated])
 def api_story_like(request, pk):
     try:
@@ -503,7 +680,7 @@ def api_story_like(request, pk):
 
 
 @api_view(["DELETE"])
-@authentication_classes([CsrfExemptSessionAuthentication])
+@authentication_classes([SessionAuthentication])
 @permission_classes([IsAuthenticated])
 def api_story_delete(request, pk):
     try:
@@ -523,7 +700,7 @@ def api_story_delete(request, pk):
 # ==========================================
 
 @api_view(["GET"])
-@authentication_classes([CsrfExemptSessionAuthentication])
+@authentication_classes([SessionAuthentication])
 @permission_classes([IsAuthenticated])
 def api_conversations_list(request):
     user = request.user
@@ -533,7 +710,7 @@ def api_conversations_list(request):
 
 
 @api_view(["GET"])
-@authentication_classes([CsrfExemptSessionAuthentication])
+@authentication_classes([SessionAuthentication])
 @permission_classes([IsAuthenticated])
 def api_conversation_detail(request, username):
     user = request.user
@@ -559,7 +736,7 @@ def api_conversation_detail(request, username):
 
 
 @api_view(["POST"])
-@authentication_classes([CsrfExemptSessionAuthentication])
+@authentication_classes([SessionAuthentication])
 @permission_classes([IsAuthenticated])
 def api_send_message(request, username):
     user = request.user
@@ -596,7 +773,7 @@ def api_send_message(request, username):
 
 
 @api_view(["GET"])
-@authentication_classes([CsrfExemptSessionAuthentication])
+@authentication_classes([SessionAuthentication])
 @permission_classes([IsAuthenticated])
 def api_unread_messages_count(request):
     user = request.user
@@ -612,19 +789,19 @@ def api_unread_messages_count(request):
 # ==========================================
 
 @api_view(["GET"])
-@authentication_classes([CsrfExemptSessionAuthentication])
+@authentication_classes([SessionAuthentication])
 @permission_classes([AllowAny])
 def api_user_profile(request, username):
     try:
-        user = User.objects.get(username=username)
+        user = User.objects.get(username=username, is_active=True)
     except User.DoesNotExist:
         return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
 
-    return Response(UserProfileSerializer(user, context={"request": request}).data)
+    return Response(PublicUserProfileSerializer(user, context={"request": request}).data)
 
 
 @api_view(["POST"])
-@authentication_classes([CsrfExemptSessionAuthentication])
+@authentication_classes([SessionAuthentication])
 @permission_classes([IsAuthenticated])
 def api_toggle_follow(request, username):
     try:
@@ -660,21 +837,23 @@ def api_toggle_follow(request, username):
 
 
 @api_view(["GET"])
-@authentication_classes([CsrfExemptSessionAuthentication])
+@authentication_classes([SessionAuthentication])
 @permission_classes([AllowAny])
 def api_users_search(request):
-    query = (request.GET.get("q") or "").strip()
+    query = (request.GET.get("q") or "").strip()[:150]
     if not query:
         return Response([])
 
     users = User.objects.filter(
+        is_active=True,
+    ).filter(
         Q(username__icontains=query) | Q(first_name__icontains=query) | Q(last_name__icontains=query)
-    )[:20]
+    ).order_by(Lower("username"), "pk")[:20]
     return Response(UserBasicSerializer(users, many=True, context={"request": request}).data)
 
 
 @api_view(["GET"])
-@authentication_classes([CsrfExemptSessionAuthentication])
+@authentication_classes([SessionAuthentication])
 @permission_classes([AllowAny])
 def api_suggested_users(request):
     current_user = request.user
@@ -682,7 +861,7 @@ def api_suggested_users(request):
         following_ids = Follow.objects.filter(follower=current_user).values_list("following_id", flat=True)
         users = User.objects.exclude(id=current_user.id).exclude(id__in=following_ids)[:6]
     else:
-        users = User.objects.all()[:6]
+        users = User.objects.filter(is_active=True)[:6]
     return Response(UserBasicSerializer(users, many=True, context={"request": request}).data)
 
 
@@ -691,7 +870,7 @@ def api_suggested_users(request):
 # ==========================================
 
 @api_view(["GET"])
-@authentication_classes([CsrfExemptSessionAuthentication])
+@authentication_classes([SessionAuthentication])
 @permission_classes([IsAuthenticated])
 def api_notifications_list(request):
     notifs = request.user.notifications.select_related("actor").order_by("-created_at")[:50]
@@ -699,7 +878,7 @@ def api_notifications_list(request):
 
 
 @api_view(["POST"])
-@authentication_classes([CsrfExemptSessionAuthentication])
+@authentication_classes([SessionAuthentication])
 @permission_classes([IsAuthenticated])
 def api_notifications_mark_read(request):
     notif_id = request.data.get("id")
@@ -711,7 +890,7 @@ def api_notifications_mark_read(request):
 
 
 @api_view(["GET"])
-@authentication_classes([CsrfExemptSessionAuthentication])
+@authentication_classes([SessionAuthentication])
 @permission_classes([IsAuthenticated])
 def api_notifications_unread_count(request):
     count = request.user.notifications.filter(is_read=False).count()
@@ -723,7 +902,7 @@ def api_notifications_unread_count(request):
 # ==========================================
 
 @api_view(["GET"])
-@authentication_classes([CsrfExemptSessionAuthentication])
+@authentication_classes([SessionAuthentication])
 @permission_classes([AllowAny])
 def api_trending_hashtags(request):
     # Scan recent posts for popular hashtags
@@ -781,7 +960,7 @@ AI_TEMPLATES = [
 ]
 
 @api_view(["POST"])
-@authentication_classes([CsrfExemptSessionAuthentication])
+@authentication_classes([SessionAuthentication])
 @permission_classes([AllowAny])
 def api_ai_generate(request):
     prompt = (request.data.get("prompt") or "").strip().lower()

@@ -1,6 +1,17 @@
 import re
+from urllib.parse import urlsplit
 from rest_framework import serializers
 from .models import User, Post, Comment, PostLike, Follow, CommentLike, Story, StoryLike, Conversation, Message, Notification
+
+
+def media_field_url(field, request=None):
+    try:
+        url = field.url
+    except (OSError, ValueError):
+        return None
+    if not request or urlsplit(url).scheme or urlsplit(url).netloc:
+        return url
+    return request.build_absolute_uri(url)
 
 
 def extract_hashtags_list(content):
@@ -24,10 +35,7 @@ class UserBasicSerializer(serializers.ModelSerializer):
 
     def get_avatar_url(self, obj):
         if obj.avatar:
-            request = self.context.get("request")
-            if request:
-                return request.build_absolute_uri(obj.avatar.url)
-            return obj.avatar.url
+            return media_field_url(obj.avatar, self.context.get("request"))
         return None
 
 
@@ -56,6 +64,11 @@ class UserProfileSerializer(UserBasicSerializer):
         if not request or not request.user.is_authenticated:
             return False
         return Follow.objects.filter(follower=request.user, following=obj).exists()
+
+
+class PublicUserProfileSerializer(UserProfileSerializer):
+    class Meta(UserProfileSerializer.Meta):
+        fields = [field for field in UserProfileSerializer.Meta.fields if field != "email"]
 
 
 class CommentReplySerializer(serializers.ModelSerializer):
@@ -120,18 +133,12 @@ class PostSerializer(serializers.ModelSerializer):
 
     def get_image_url(self, obj):
         if obj.image:
-            request = self.context.get("request")
-            if request:
-                return request.build_absolute_uri(obj.image.url)
-            return obj.image.url
+            return media_field_url(obj.image, self.context.get("request"))
         return None
 
     def get_video_url(self, obj):
         if obj.video:
-            request = self.context.get("request")
-            if request:
-                return request.build_absolute_uri(obj.video.url)
-            return obj.video.url
+            return media_field_url(obj.video, self.context.get("request"))
         return None
 
     def get_like_count(self, obj):
@@ -169,18 +176,12 @@ class StorySerializer(serializers.ModelSerializer):
 
     def get_image_url(self, obj):
         if obj.image:
-            request = self.context.get("request")
-            if request:
-                return request.build_absolute_uri(obj.image.url)
-            return obj.image.url
+            return media_field_url(obj.image, self.context.get("request"))
         return None
 
     def get_video_url(self, obj):
         if obj.video:
-            request = self.context.get("request")
-            if request:
-                return request.build_absolute_uri(obj.video.url)
-            return obj.video.url
+            return media_field_url(obj.video, self.context.get("request"))
         return None
 
     def get_like_count(self, obj):

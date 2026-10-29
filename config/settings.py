@@ -3,7 +3,7 @@ import secrets
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-DEBUG = os.environ.get("DJANGO_DEBUG", "1") == "1"
+DEBUG = os.environ.get("DJANGO_DEBUG", "0" if os.environ.get("RENDER") else "1") == "1"
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY")
 if not SECRET_KEY:
     if not DEBUG:
@@ -127,6 +127,45 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 MEDIA_ROOT = BASE_DIR / "media"
 MEDIA_URL = "/media/"
 
+# Supabase's S3 endpoint is accessed only by Django. These credentials must
+# never be supplied as Vite (VITE_*) environment variables.
+SUPABASE_STORAGE_BUCKET = os.environ.get("SUPABASE_STORAGE_BUCKET", "social-media")
+SUPABASE_STORAGE_REGION = os.environ.get("SUPABASE_STORAGE_REGION", "")
+SUPABASE_STORAGE_ENDPOINT = os.environ.get("SUPABASE_STORAGE_ENDPOINT", "").strip().rstrip("/")
+SUPABASE_STORAGE_PUBLIC_URL = os.environ.get("SUPABASE_STORAGE_PUBLIC_URL", "").strip().rstrip("/")
+SUPABASE_STORAGE_ACCESS_KEY_ID = os.environ.get("SUPABASE_STORAGE_ACCESS_KEY_ID", "")
+SUPABASE_STORAGE_SECRET_ACCESS_KEY = os.environ.get("SUPABASE_STORAGE_SECRET_ACCESS_KEY", "")
+MEDIA_STORAGE_CONFIGURED = all((
+    SUPABASE_STORAGE_BUCKET,
+    SUPABASE_STORAGE_REGION,
+    SUPABASE_STORAGE_ENDPOINT,
+    SUPABASE_STORAGE_PUBLIC_URL,
+    SUPABASE_STORAGE_ACCESS_KEY_ID,
+    SUPABASE_STORAGE_SECRET_ACCESS_KEY,
+))
+
+STORAGES = {
+    "default": ({
+        "BACKEND": "social.storage.SupabasePublicMediaStorage",
+        "OPTIONS": {
+            "bucket_name": SUPABASE_STORAGE_BUCKET,
+            "region_name": SUPABASE_STORAGE_REGION,
+            "endpoint_url": SUPABASE_STORAGE_ENDPOINT,
+            "access_key": SUPABASE_STORAGE_ACCESS_KEY_ID,
+            "secret_key": SUPABASE_STORAGE_SECRET_ACCESS_KEY,
+            "addressing_style": "path",
+            "signature_version": "s3v4",
+            "querystring_auth": False,
+            "file_overwrite": False,
+            "object_parameters": {"CacheControl": "public, max-age=31536000, immutable"},
+        },
+    } if MEDIA_STORAGE_CONFIGURED else {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    }),
+    "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+}
+MAX_VIDEO_UPLOAD_SIZE = int(os.environ.get("MAX_VIDEO_UPLOAD_SIZE", str(50 * 1024 * 1024)))
+
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 LOGIN_URL = "login"
@@ -136,10 +175,15 @@ LOGOUT_REDIRECT_URL = "login"
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SECURE = not DEBUG
 CSRF_COOKIE_SECURE = not DEBUG
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = "DENY"
 
-FRONTEND_ORIGIN = os.environ.get("FRONTEND_ORIGIN", "").strip().rstrip("/")
+FRONTEND_ORIGINS = [
+    origin.strip().rstrip("/")
+    for origin in os.environ.get("FRONTEND_ORIGIN", "").split(",")
+    if origin.strip()
+]
 LOCAL_FRONTEND_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
@@ -151,9 +195,10 @@ LOCAL_CSRF_TRUSTED_ORIGINS = LOCAL_FRONTEND_ORIGINS + [
     "http://127.0.0.1:8000",
 ]
 CORS_ALLOW_ALL_ORIGINS = False
-CORS_ALLOWED_ORIGINS = LOCAL_FRONTEND_ORIGINS + ([FRONTEND_ORIGIN] if FRONTEND_ORIGIN else [])
+CORS_ALLOWED_ORIGINS = (LOCAL_FRONTEND_ORIGINS + FRONTEND_ORIGINS) if DEBUG else FRONTEND_ORIGINS
 CORS_ALLOW_CREDENTIALS = True
-CSRF_TRUSTED_ORIGINS = LOCAL_CSRF_TRUSTED_ORIGINS + ([FRONTEND_ORIGIN] if FRONTEND_ORIGIN else [])
+CSRF_TRUSTED_ORIGINS = (LOCAL_CSRF_TRUSTED_ORIGINS + FRONTEND_ORIGINS) if DEBUG else FRONTEND_ORIGINS
+CSRF_FAILURE_VIEW = "social.api_views.csrf_failure"
 
 # The frontend and API use separate Render origins. Cross-site cookies require
 # SameSite=None; Secure is enabled for production below.
@@ -162,7 +207,6 @@ CSRF_COOKIE_SAMESITE = "None" if not DEBUG else "Lax"
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "social.api_auth.CsrfExemptSessionAuthentication",
         "rest_framework.authentication.SessionAuthentication",
     ],
 }

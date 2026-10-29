@@ -2,14 +2,19 @@ import {
   User, Post, CommentItem, Story, StoryGroup,
   Conversation, Message, NotificationItem, TrendingTag
 } from '../types';
+import { getApiRoot } from './apiConfig.mjs';
 
-const API_ORIGIN = (import.meta.env.VITE_API_URL ?? '').replace(/\/+$/, '');
-const BASE_URL = `${API_ORIGIN}/api`;
+const BASE_URL = getApiRoot(import.meta.env.VITE_API_URL);
+let csrfToken: string | null = null;
 
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const defaultHeaders: Record<string, string> = {};
   if (!(options.body instanceof FormData)) {
     defaultHeaders['Content-Type'] = 'application/json';
+  }
+  const method = (options.method || 'GET').toUpperCase();
+  if (!['GET', 'HEAD', 'OPTIONS', 'TRACE'].includes(method) && csrfToken) {
+    defaultHeaders['X-CSRFToken'] = csrfToken;
   }
 
   const res = await fetch(`${BASE_URL}${endpoint}`, {
@@ -24,10 +29,11 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
   if (!res.ok) {
     let errMessage = 'Request failed';
     try {
-      const data = await res.json();
-      errMessage = data.error || data.detail || JSON.stringify(data);
+      const data = await res.json() as Record<string, unknown>;
+      const details = data.error || data.detail || data.message || data;
+      errMessage = typeof details === 'string' ? details : JSON.stringify(details);
     } catch {
-      errMessage = `HTTP error ${res.status}`;
+      errMessage = `The server returned an unexpected response (${res.status}). Please try again.`;
     }
     throw new Error(errMessage);
   }
@@ -43,11 +49,23 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
 export const api = {
   // Auth
   auth: {
+    csrf: async () => {
+      const response = await request<{ csrfToken: string }>('/auth/csrf/');
+      csrfToken = response.csrfToken;
+    },
     me: () => request<{ authenticated: boolean; user: User | null }>('/auth/me/'),
-    login: (credentials: { username: string; password: string }) =>
-      request<User>('/auth/login/', { method: 'POST', body: JSON.stringify(credentials) }),
-    register: (data: { username: string; email: string; password: string; first_name?: string; last_name?: string }) =>
-      request<User>('/auth/register/', { method: 'POST', body: JSON.stringify(data) }),
+    login: async (credentials: { username: string; password: string }) => {
+      await api.auth.csrf();
+      const user = await request<User>('/auth/login/', { method: 'POST', body: JSON.stringify(credentials) });
+      await api.auth.csrf();
+      return user;
+    },
+    register: async (data: { username: string; email: string; password: string; first_name?: string; last_name?: string }) => {
+      await api.auth.csrf();
+      const user = await request<User>('/auth/register/', { method: 'POST', body: JSON.stringify(data) });
+      await api.auth.csrf();
+      return user;
+    },
     logout: () => request<{ message: string }>('/auth/logout/', { method: 'POST' }),
     updateProfile: (formData: FormData) =>
       request<User>('/auth/profile/', { method: 'PATCH', body: formData }),
@@ -111,7 +129,8 @@ export const api = {
     getProfile: (username: string) => request<User>(`/users/${username}/`),
     toggleFollow: (username: string) =>
       request<{ is_following: boolean; followers_count: number; following_count: number }>(`/users/${username}/follow/`, { method: 'POST' }),
-    search: (query: string) => request<User[]>(`/users/search/?q=${encodeURIComponent(query)}`),
+    search: (query: string, signal?: AbortSignal) =>
+      request<User[]>(`/users/search/?q=${encodeURIComponent(query)}`, { signal }),
     suggestions: () => request<User[]>('/users/suggestions/'),
   },
 
